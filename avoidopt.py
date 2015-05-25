@@ -104,13 +104,13 @@ while len(bblist)>0:
     # now check for unsatisfied avoidance constraints
     for kk in thisProb.steps:
         # is it in the box?
-        if x[kk].result(newres)<obs[0]:
+        if x[kk].result(newres)<obs[0] and x[kk+1].result(newres)<obs[0]:
             continue
-        elif x[kk].result(newres)>obs[1]:
+        elif x[kk].result(newres)>obs[1] and x[kk+1].result(newres)>obs[1]:
             continue
-        elif y[kk].result(newres)<obs[2]:
+        elif y[kk].result(newres)<obs[2] and y[kk+1].result(newres)<obs[2]:
             continue
-        elif y[kk].result(newres)>obs[3]:
+        elif y[kk].result(newres)>obs[3] and y[kk+1].result(newres)>obs[3]:
             continue
         else:
             # I'm inside - branch on the first one found
@@ -123,12 +123,16 @@ while len(bblist)>0:
             # four new subproblems
             p1 = deepcopy(thisProb)
             p1.lp.bounds[x[kk].myvar-1] = (xbounds[0],obs[0])
+            p1.lp.bounds[x[kk+1].myvar-1] = (xbounds[0],obs[0])
             p2 = deepcopy(thisProb)
             p2.lp.bounds[y[kk].myvar-1] = (ybounds[0],obs[2])
+            p2.lp.bounds[y[kk+1].myvar-1] = (ybounds[0],obs[2])
             p3 = deepcopy(thisProb)
             p3.lp.bounds[x[kk].myvar-1] = (obs[1],xbounds[1])
+            p3.lp.bounds[x[kk+1].myvar-1] = (obs[1],xbounds[1])
             p4 = deepcopy(thisProb)
             p4.lp.bounds[y[kk].myvar-1] = (obs[3],ybounds[1])
+            p4.lp.bounds[y[kk+1].myvar-1] = (obs[3],ybounds[1])
             # append them to the list
             bblist.append(p1)
             bblist.append(p2)
