@@ -12,8 +12,8 @@ dt = 0.25
 amax = 2
 
 # set up vars
-x=[p.newvar()]
-y=[p.newvar()]
+x=[p.newvar((-3.,3.))]
+y=[p.newvar((-3.,3.))]
 vx=[p.newvar()]
 vy=[p.newvar()]
 ax=[]
@@ -28,8 +28,8 @@ for kk in range(Nt):
     mx.append(p.newvar((0,amax)))
     my.append(p.newvar((0,amax)))    
     # positions
-    x.append(p.newvar())
-    y.append(p.newvar())
+    x.append(p.newvar((-3.,3.)))
+    y.append(p.newvar((-3.,3.)))
     # velocities
     vx.append(p.newvar())
     vy.append(p.newvar())
@@ -61,17 +61,17 @@ p.addeqcon(vy[Nt],0)
 # objective
 p.setobj(sum(mx)+sum(my))
 
-print(p.solve())
+#print(p.solve())
 
 # gather the results
-x=[r.result() for r in x]
-y=[r.result() for r in y]
+xopt=[r.result() for r in x]
+yopt=[r.result() for r in y]
 
 # box obstacle
 obs = [0.75, 1.0, 0.5, 1.0]
 
 # plot
-plt.plot(x,y,'b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
+plt.plot(xopt,yopt,'b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
 plt.show()
 
 # list of time steps to be checked

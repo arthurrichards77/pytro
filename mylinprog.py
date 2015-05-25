@@ -1,5 +1,6 @@
 import numpy
-import scipy.optimize as opt
+from scipy.optimize import linprog
+from copy import deepcopy
 
 class linexp(object):
     def __init__(self,varnumarray,varmultarray):
@@ -65,7 +66,7 @@ class lp(object):
         self.numeqs=0
         self.bounds=[]
 
-    def newvar(self,bounds=(None,None)):
+    def newvar(self,bounds=(-numpy.inf,numpy.inf)):
         self.numvars = self.numvars+1
         self.bounds.append(bounds)
         return decvar(self.numvars,self)
@@ -92,10 +93,13 @@ class lp(object):
         self.c = costexp.to_array(self.numvars)
 
     def solve(self):
+        # some calcs are done in place, changing the input data
+        # so make a copy of myself first to avoid losing problem
+        local_self = deepcopy(self)
         if self.numeqs>0:
-            self.result=opt.linprog(self.c,A_ub=self.A,b_ub=self.b,A_eq=self.Aeq,b_eq=self.beq, bounds=self.bounds)
+            self.result=linprog(local_self.c,A_ub=local_self.A,b_ub=local_self.b,A_eq=local_self.Aeq,b_eq=local_self.beq, bounds=local_self.bounds, options=dict(tol=1e-6))
         else:
-            self.result=opt.linprog(self.c,A_ub=self.A,b_ub=self.b, bounds=self.bounds)
+            self.result=linprog(local_self.c,A_ub=local_self.A,b_ub=local_self.b, bounds=local_self.bounds, options=dict(tol=1e-6))
         return self.result
         
 def test():
