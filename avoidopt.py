@@ -104,33 +104,38 @@ while len(bblist)>0:
     # now check for unsatisfied avoidance constraints
     for kk in thisProb.steps:
         # is it in the box?
-        if x[kk].result(newres)>obs[0]:
-            if x[kk].result(newres)<obs[1]:
-                if y[kk].result(newres)>obs[2]:
-                    if y[kk].result(newres)<obs[3]:
-                        # I'm inside - branch on the first one found
-                        # make the new list of steps
-                        newsteps = thisProb.steps
-                        newsteps.remove(kk)
-                        # get current bounds
-                        xbounds = thisProb.lp.bounds[x[kk].myvar-1]
-                        ybounds = thisProb.lp.bounds[y[kk].myvar-1]
-                        # four new subproblems
-                        p1 = deepcopy(thisProb)
-                        p1.lp.bounds[x[kk].myvar-1] = (xbounds[0],obs[0])
-                        p2 = deepcopy(thisProb)
-                        p2.lp.bounds[y[kk].myvar-1] = (ybounds[0],obs[2])
-                        p3 = deepcopy(thisProb)
-                        p3.lp.bounds[x[kk].myvar-1] = (obs[1],xbounds[1])
-                        p4 = deepcopy(thisProb)
-                        p4.lp.bounds[y[kk].myvar-1] = (obs[3],ybounds[1])
-                        # append them to the list
-                        bblist.append(p1)
-                        bblist.append(p2)
-                        bblist.append(p3)
-                        bblist.append(p4)
-                        # break out of the for loop checking constraints
-                        break
+        if x[kk].result(newres)<obs[0]:
+            continue
+        elif x[kk].result(newres)>obs[1]:
+            continue
+        elif y[kk].result(newres)<obs[2]:
+            continue
+        elif y[kk].result(newres)>obs[3]:
+            continue
+        else:
+            # I'm inside - branch on the first one found
+            # make the new list of steps
+            newsteps = thisProb.steps
+            newsteps.remove(kk)
+            # get current bounds
+            xbounds = thisProb.lp.bounds[x[kk].myvar-1]
+            ybounds = thisProb.lp.bounds[y[kk].myvar-1]
+            # four new subproblems
+            p1 = deepcopy(thisProb)
+            p1.lp.bounds[x[kk].myvar-1] = (xbounds[0],obs[0])
+            p2 = deepcopy(thisProb)
+            p2.lp.bounds[y[kk].myvar-1] = (ybounds[0],obs[2])
+            p3 = deepcopy(thisProb)
+            p3.lp.bounds[x[kk].myvar-1] = (obs[1],xbounds[1])
+            p4 = deepcopy(thisProb)
+            p4.lp.bounds[y[kk].myvar-1] = (obs[3],ybounds[1])
+            # append them to the list
+            bblist.append(p1)
+            bblist.append(p2)
+            bblist.append(p3)
+            bblist.append(p4)
+            # break out of the for loop checking constraints
+            break
     else:
         #if I got through the loop, this is feasible for avoidance
         if newres.fun<incBound:
