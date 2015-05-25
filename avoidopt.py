@@ -1,4 +1,5 @@
 import mylinprog as lp
+import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
 
@@ -8,9 +9,9 @@ from copy import deepcopy
 p = lp.lp()
 
 # time steps
-Nt = 20
-dt = 0.125
-amax = 2
+Nt = 3
+dt = 0.5
+amax = 20
 
 # set up vars
 x=[p.newvar()]
@@ -21,6 +22,8 @@ ax=[]
 ay=[]
 mx=[]
 my=[]
+sp=[]
+
 for kk in range(Nt):
     # accelerations
     ax.append(p.newvar())
@@ -34,6 +37,8 @@ for kk in range(Nt):
     # velocities
     vx.append(p.newvar())
     vy.append(p.newvar())
+    # speeds
+    sp.append(p.newvar((0,None)))
     
 # dynamics constraints
 for kk in range(Nt):
@@ -46,6 +51,10 @@ for kk in range(Nt):
     p.addineq(-my[kk]-ay[kk],0)
     p.addineq(-mx[kk]+ax[kk],0)
     p.addineq(-my[kk]+ay[kk],0)
+    # speed
+    for tt in range(8):
+        theta=np.pi*2.0*(tt/8.0)
+        p.addineq(-sp[kk]+np.cos(theta)*vx[kk]+np.sin(theta)*vy[kk],0)
 
 # initial constraints
 p.addeqcon(x[0],0)
@@ -60,7 +69,7 @@ p.addeqcon(vx[Nt],0)
 p.addeqcon(vy[Nt],0)
 
 # objective
-p.setobj(sum(mx)+sum(my))
+p.setobj(sum(mx)+sum(my)+0.00000*sum(sp))
 
 # box obstacle
 obs = [0.25, 1.0, 0.45, 1.5]
