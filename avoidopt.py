@@ -9,7 +9,7 @@ from copy import deepcopy
 p = lp.lp()
 
 # time steps
-Nt = 5
+Nt = 10
 dt = 0.5
 amax = 200.0
 pmax = 3.0
@@ -74,7 +74,7 @@ p.addeqcon(vy[Nt],0)
 p.setobj(sum(mx)+sum(my))
 
 # box obstacle
-obs = [0.45, 1.0, 0.25, 0.6]
+obs = [0.45, 1.0, -0.55, 2.6]
 
 ### plot
 ##plt.plot(x,y,'b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
@@ -182,5 +182,5 @@ x=[r.result(incSol) for r in x]
 y=[r.result(incSol) for r in y]
 
 # plot
-plt.plot(x,y,'b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
+plt.plot(x,y,'.b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
 plt.show()
