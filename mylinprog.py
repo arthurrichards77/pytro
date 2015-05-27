@@ -41,23 +41,9 @@ class linexp(object):
 
 class decvar(linexp):
 
-    def __init__(self,varnum,problem):
+    def __init__(self,varnum):
         linexp.__init__(self,numpy.array([varnum]),numpy.array([1.0]))
         self.myvar = varnum
-        self.problem = problem
-
-    def result(self,result=None):
-        if result==None:
-            result=self.problem.result
-        return result.x[self.myvar-1]
-
-    @property
-    def bounds(self):
-        return self.problem.bounds[self.myvar-1]
-
-    @bounds.setter
-    def bounds(self,value):
-        self.problem.bounds[self.myvar-1]=value
             
 class lp(object):
     def __init__(self):
@@ -69,7 +55,7 @@ class lp(object):
     def newvar(self,bounds=(-numpy.inf,numpy.inf)):
         self.numvars = self.numvars+1
         self.bounds.append(bounds)
-        return decvar(self.numvars,self)
+        return decvar(self.numvars)
 
     def addeqcon(self,conexp,rhs):
         if self.numeqs>0:
@@ -97,11 +83,27 @@ class lp(object):
         # so make a copy of myself first to avoid losing problem
         local_self = deepcopy(self)
         if self.numeqs>0:
-            self.result=linprog(local_self.c,A_ub=local_self.A,b_ub=local_self.b,A_eq=local_self.Aeq,b_eq=local_self.beq, bounds=local_self.bounds, options=dict(tol=1e-6))
+            self.result=linprog(local_self.c,A_ub=local_self.A,b_ub=local_self.b,
+                                A_eq=local_self.Aeq,b_eq=local_self.beq,
+                                bounds=local_self.bounds,
+                                options=dict(bland=True))
         else:
-            self.result=linprog(local_self.c,A_ub=local_self.A,b_ub=local_self.b, bounds=local_self.bounds, options=dict(tol=1e-6))
+            self.result=linprog(local_self.c,A_ub=local_self.A,b_ub=local_self.b,
+                                bounds=local_self.bounds,
+                                options=dict(bland=True))
+        if self.result.status==0:
+            assert numpy.amin([self.result.x[i]-self.bounds[i][0] for i in range(len(self.result.x))])>-1e-6, "Linprog violated lower bound"
         return self.result
-        
+
+    def getbounds(self,decvar):
+        return self.bounds[decvar.myvar-1]
+
+    def setbounds(self,decvar,value):
+        self.bounds[decvar.myvar-1]=value
+
+    def varresult(self,decvar):
+        return self.result.x[decvar.myvar-1]
+    
 def test():
     p = lp()
     x = p.newvar()
@@ -110,16 +112,19 @@ def test():
     p.addineq(-x-y,-4)
     p.addineq(2*x-y,2)
     p.addineq(x+y,8)
-    res=p.solve()
-    print(res)
-    print("x=%f" % x.result())
-    print("y=%f" % y.result())
+    print(p.solve())
+    print("x=%f (2?)" % p.varresult(x))
+    print("y=%f (2?)" % p.varresult(y))
     p.setobj(-x)
     print(p.solve())
-    print("x=%f" % x.result())
-    print("y=%f" % y.result())
+    print("x=%f (3.33?)" % p.varresult(x))
+    print("y=%f (4.66?)"% p.varresult(y))
     p.addeqcon(y-x,1)
     print(p.solve())
-    print("x=%f" % x.result())
-    print("y=%f" % y.result())
-    print("x=%f" % x.result(result=res))
+    print("x=%f (3?)" % p.varresult(x))
+    print("y=%f (4?)" % p.varresult(y))
+    p.setbounds(x,(-numpy.inf,2.5))
+    print(p.solve())
+    print("x=%f (2.5?)" % p.varresult(x))
+    print("y=%f (3.5?)" % p.varresult(y))
+    

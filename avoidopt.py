@@ -1,186 +1,140 @@
-import mylinprog as lp
+import trajlp as tlp
 import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
 
-#lp.test()
+class bbnode:
 
-# new LP problem
-p = lp.lp()
-
-# time steps
-Nt = 5
-dt = 0.5
-amax = 200.0
-pmax = 3.0
-
-# set up vars
-x=[p.newvar((-pmax,pmax))]
-y=[p.newvar((-pmax,pmax))]
-vx=[p.newvar()]
-vy=[p.newvar()]
-ax=[]
-ay=[]
-mx=[]
-my=[]
-sp=[]
-
-for kk in range(Nt):
-    # accelerations
-    ax.append(p.newvar())
-    ay.append(p.newvar())
-    # acceleration magnitudes
-    mx.append(p.newvar((0,amax)))
-    my.append(p.newvar((0,amax)))
-    # speeds
-    #sp.append(p.newvar((0,None)))    
-    # positions
-    x.append(p.newvar((-pmax,pmax)))
-    y.append(p.newvar((-pmax,pmax)))
-    # velocities
-    vx.append(p.newvar())
-    vy.append(p.newvar())
-    
-# dynamics constraints
-for kk in range(Nt):
-    p.addeqcon(x[kk]+dt*vx[kk]+dt*dt*0.5*ax[kk]-x[kk+1],0)
-    p.addeqcon(y[kk]+dt*vy[kk]+dt*dt*0.5*ay[kk]-y[kk+1],0)
-    p.addeqcon(vx[kk]+dt*ax[kk]-vx[kk+1],0)
-    p.addeqcon(vy[kk]+dt*ay[kk]-vy[kk+1],0)
-    # grab magitudes
-    p.addineq(-mx[kk]-ax[kk],0)
-    p.addineq(-my[kk]-ay[kk],0)
-    p.addineq(-mx[kk]+ax[kk],0)
-    p.addineq(-my[kk]+ay[kk],0)
-    # speed
-    #for tt in range(8):
-        #theta=np.pi*2.0*(tt/8.0)
-        #p.addineq(-sp[kk]+np.cos(theta)*vx[kk]+np.sin(theta)*vy[kk],0)
-
-# initial constraints
-p.addeqcon(x[0],0)
-p.addeqcon(y[0],0)
-p.addeqcon(vx[0],0)
-p.addeqcon(vy[0],0)
-
-# initial constraints
-p.addeqcon(x[Nt],1.8)
-p.addeqcon(y[Nt],1.4)
-p.addeqcon(vx[Nt],0)
-p.addeqcon(vy[Nt],0)
-
-# objective
-#p.setobj(sum(mx)+sum(my)+0.000001*sum(sp))
-p.setobj(sum(mx)+sum(my))
-
-# box obstacle
-obs = [0.45, 1.0, 0.25, 0.6]
-
-### plot
-##plt.plot(x,y,'b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
-##plt.show()
-
-# incumbent
-incBound = 3000
-
-class subproblem:
-
-    def __init__(self,lp,bound,steps):
-        self.lp = lp
+    def __init__(self,trajlp,bound,steps):
+        self.lp = trajlp
         self.bound = bound
         self.steps = steps
+        self.id = ''
 
     def solve(self):
-        return self.lp.solve()
+        print self.id
+        print self.steps
+        print self.lp.lp.bounds
+        self.result = self.lp.solve()
+        print self.result
+        if self.result.status==0:
+            self.trajx = self.lp.trajx()
+            self.trajy = self.lp.trajy()
+            assert self.result.fun>=self.bound, "Bound went down on solve: %f < %f." % (self.result.fun,self.bound)
+            self.bound = self.result.fun
+        return self.result
 
-bblist = [subproblem(p,2000,range(Nt))]
-    
-for ii in range(20):
-    if len(bblist)<1:
-        break
-    print("Num active nodes = %i" % len(bblist))
-    # depth first - so grab last node
-    thisProb = bblist.pop()
-    print thisProb.lp.bounds
-    # check if it still needs solving
-    if thisProb.bound>incBound:
-        # fathomed
-        print("LP bound above incumbent")
-        continue
-    # solve the thing
-    #newres=thisProb.solve()
-    #print newres
-    try:
-        newres=thisProb.solve()
-    except ValueError:
-        print("ValueError!!")
-        continue
-    # if it was infeasible
-    if thisProb.lp.result.status>0:
-        # also fathomed
-        print("Infeasible")
-        continue
-    if thisProb.lp.result.fun>incBound:
-        # fathomed again
-        print("LP result above incumbent")
-        continue
-    # set bound for future offspring
-    thisProb.bound=newres.fun
-    # now check for unsatisfied avoidance constraints
-    for kk in thisProb.steps:
-        # is it in the box?
-        if x[kk].result(newres)<obs[0] and x[kk+1].result(newres)<obs[0]:
-            continue
-        elif x[kk].result(newres)>obs[1] and x[kk+1].result(newres)>obs[1]:
-            continue
-        elif y[kk].result(newres)<obs[2] and y[kk+1].result(newres)<obs[2]:
-            continue
-        elif y[kk].result(newres)>obs[3] and y[kk+1].result(newres)>obs[3]:
-            continue
-        else:
-            print("Incursion step %i" % kk)
-            # I'm inside - branch on the first one found
-            # make the new list of steps
-            newsteps = thisProb.steps
-            newsteps.remove(kk)
-            # get current bounds
-            xbounds = thisProb.lp.bounds[x[kk].myvar-1]
-            ybounds = thisProb.lp.bounds[y[kk].myvar-1]
-            xboundsn = thisProb.lp.bounds[x[kk+1].myvar-1]
-            yboundsn = thisProb.lp.bounds[y[kk+1].myvar-1]
-            # four new subproblems
-            p1 = deepcopy(thisProb)
-            p1.lp.bounds[x[kk].myvar-1] = (xbounds[0],np.minimum(xbounds[1],obs[0]))
-            p1.lp.bounds[x[kk+1].myvar-1] = (xboundsn[0],np.minimum(xboundsn[1],obs[0]))
-            p2 = deepcopy(thisProb)
-            p2.lp.bounds[y[kk].myvar-1] = (ybounds[0],np.minimum(ybounds[1],obs[2]))
-            p2.lp.bounds[y[kk+1].myvar-1] = (yboundsn[0],np.minimum(yboundsn[1],obs[2]))
-            p3 = deepcopy(thisProb)
-            p3.lp.bounds[x[kk].myvar-1] = (np.maximum(xbounds[0],obs[1]),xbounds[1])
-            p3.lp.bounds[x[kk+1].myvar-1] = (np.maximum(xboundsn[0],obs[1]),xboundsn[1])
-            p4 = deepcopy(thisProb)
-            p4.lp.bounds[y[kk].myvar-1] = (np.maximum(ybounds[0],obs[3]),ybounds[1])
-            p4.lp.bounds[y[kk+1].myvar-1] = (np.maximum(yboundsn[0],obs[3]),yboundsn[1])
-            # append them to the list
-            bblist.append(p1)
-            bblist.append(p2)
-            bblist.append(p3)
-            bblist.append(p4)
-            # break out of the for loop checking constraints
-            break
-    else:
-        #if I got through the loop, this is feasible for avoidance
-        print("Feasible with cost %f" % newres.fun)
-        if newres.fun<incBound:
-            # got a new incumbent
-            incBound=newres.fun
-            incSol=newres
-                        
-# got to here if it solved
-# gather the results
-x=[r.result(incSol) for r in x]
-y=[r.result(incSol) for r in y]
+    def restrict(self,step,box):
+        cxbounds=self.lp.lp.getbounds(self.lp.x[step])
+        cybounds=self.lp.lp.getbounds(self.lp.y[step])
+        nxbounds=(np.maximum(cxbounds[0],box[0]),
+                  np.minimum(cxbounds[1],box[1]))
+        nybounds=(np.maximum(cybounds[0],box[2]),
+                  np.minimum(cybounds[1],box[3]))
+        self.lp.lp.setbounds(self.lp.x[step],nxbounds)
+        self.lp.lp.setbounds(self.lp.y[step],nybounds)
 
-# plot
-plt.plot(x,y,'b-',[obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
-plt.show()
+class avoidopt:
+
+    def __init__(self,Nt=10,dt=0.2,amax=2,
+                 pstart=[0.0,0.0,0.0,0.0], pgoal=[1.5,1.0,0.0,0.0],
+                 xbounds=(-np.inf,np.inf),ybounds=(-np.inf,np.inf),
+                 obs = [0.45, 1.0, 0.25, 0.6],
+                 maxsolves=20):
+        rootlp = tlp.trajlp(Nt,dt,amax,pstart,pgoal,xbounds,ybounds)
+        self.bblist = [bbnode(rootlp,-np.inf,range(Nt))]
+        inccost=np.inf
+
+        for ii in range(maxsolves):
+            if len(self.bblist)<1:
+                break
+            print("Num active nodes = %i" % len(self.bblist))
+            # depth first - so grab last node
+            thisProb = self.bblist.pop()
+            # check if it still needs solving
+            if thisProb.bound>inccost:
+                # fathomed
+                print("LP bound above incumbent")
+                continue
+            # solve the thing
+            try:
+                thisProb.solve()
+            except ValueError:
+                print("ValueError!!")
+                continue
+            # if it was infeasible
+            if thisProb.result.status>0:
+                # also fathomed
+                print("Infeasible")
+                continue
+            if thisProb.result.fun>inccost:
+                # fathomed again
+                print("LP result above incumbent")
+                continue
+            # now check for unsatisfied avoidance constraints
+            for kk in thisProb.steps:
+                # is it in the box?
+                if thisProb.trajx[kk]<obs[0] and thisProb.trajx[kk+1]<obs[0]:
+                    print "Step %i clear left" % kk
+                    continue
+                elif thisProb.trajx[kk]>obs[1] and thisProb.trajx[kk+1]>obs[1]:
+                    print "Step %i clear right" % kk
+                    continue
+                elif thisProb.trajy[kk]<obs[2] and thisProb.trajy[kk+1]<obs[2]:
+                    print "Step %i clear down" % kk
+                    continue
+                elif thisProb.trajy[kk]>obs[3] and thisProb.trajy[kk+1]>obs[3]:
+                    print "Step %i clear up" % kk
+                    continue
+                else:
+                    print("Incursion step %i" % kk)
+                    # I'm inside - branch on the first one found
+                    # make the new list of steps
+                    thisProb.steps.remove(kk)
+                    # four new subproblems - left
+                    p1 = deepcopy(thisProb)
+                    p1.restrict(kk,[-np.inf,obs[0],-np.inf,np.inf])
+                    p1.restrict(kk+1,[-np.inf,obs[0],-np.inf,np.inf])
+                    p1.id = p1.id + "%iL" % kk
+                    self.bblist.append(p1)
+                    # right
+                    p2 = deepcopy(thisProb)
+                    p2.restrict(kk,[obs[1],np.inf,-np.inf,np.inf])
+                    p2.restrict(kk+1,[obs[1],np.inf,-np.inf,np.inf])
+                    p2.id = p2.id + "%iR" % kk
+                    self.bblist.append(p2)
+                    # down
+                    p3 = deepcopy(thisProb)
+                    p3.restrict(kk,[-np.inf,np.inf,-np.inf,obs[2]])
+                    p3.restrict(kk+1,[-np.inf,np.inf,-np.inf,obs[2]])
+                    p3.id = p3.id + "%iD" % kk
+                    self.bblist.append(p3)
+                    # up
+                    p4 = deepcopy(thisProb)
+                    p4.restrict(kk,[-np.inf,np.inf,obs[3],np.inf])
+                    p4.restrict(kk+1,[-np.inf,np.inf,obs[3],np.inf])
+                    p4.id = p4.id + "%iU" % kk
+                    self.bblist.append(p4)
+                    # append them to the list
+                    # break out of the for loop checking constraints
+                    break
+            else:
+                #if I got through the loop, this is feasible for avoidance
+                print("Feasible with cost %f" % thisProb.result.fun)
+                if thisProb.result.fun<inccost:
+                    # got a new incumbent
+                    inccost=thisProb.result.fun
+                    self.inctrajx=thisProb.trajx
+                    self.inctrajy=thisProb.trajy
+                # plot
+                plt.plot(self.inctrajx,self.inctrajy,'.b-',
+                         [obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
+                plt.show()
+
+def test():
+    testobs = [0.45, 1.01, 0.25, 1.6]
+    res = avoidopt(obs=testobs,Nt=4,dt=1.0,xbounds=(-2.0,3.0))
+    #plot
+    plt.plot(res.inctrajx,res.inctrajy,'sb-',
+             [testobs[0],testobs[0],testobs[1],testobs[1],testobs[0]],[testobs[2],testobs[3],testobs[3],testobs[2],testobs[2]],'r-')
+    plt.show()
