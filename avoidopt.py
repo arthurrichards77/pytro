@@ -20,7 +20,7 @@ class bbnode:
         if self.result.status==0:
             self.trajx = self.lp.trajx()
             self.trajy = self.lp.trajy()
-            assert self.result.fun>=self.bound, "Bound went down on solve: %f < %f." % (self.result.fun,self.bound)
+            #assert self.result.fun>=self.bound, "Bound went down on solve: %f < %f." % (self.result.fun,self.bound)
             self.bound = self.result.fun
         return self.result
 
@@ -127,14 +127,17 @@ class avoidopt:
                     self.inctrajx=thisProb.trajx
                     self.inctrajy=thisProb.trajy
                 # plot
-                plt.plot(self.inctrajx,self.inctrajy,'.b-',
-                         [obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
-                plt.show()
+                #plt.plot(self.inctrajx,self.inctrajy,'.b-',
+                #         [obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
+                #plt.show()
 
 def test():
     testobs = [0.45, 1.01, 0.25, 1.6]
-    res = avoidopt(obs=testobs,Nt=4,dt=1.0,xbounds=(-2.0,3.0))
+    res = avoidopt(obs=testobs,Nt=8,dt=0.75,xbounds=(-2.0,3.0),amax=10)
     #plot
     plt.plot(res.inctrajx,res.inctrajy,'sb-',
              [testobs[0],testobs[0],testobs[1],testobs[1],testobs[0]],[testobs[2],testobs[3],testobs[3],testobs[2],testobs[2]],'r-')
     plt.show()
+
+if __name__ == "__main__":
+    test()

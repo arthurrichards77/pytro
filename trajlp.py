@@ -87,10 +87,12 @@ class trajlp(object):
                  
 def test():
     mytrajlp = trajlp()
-    #mytrajlp = trajlp(Nt=20,amax=5,pgoal=[2.0,2.0,0.0,0.5])
+    mytrajlp = trajlp(Nt=20,amax=5,pgoal=[2.0,2.0,0.0,0.5])
     print(mytrajlp.solve())
     mytraj = mytrajlp.traj()
     # plot
     plt.plot(mytraj[0],mytraj[1],'.b-')
     plt.show()
 
+if __name__ == "__main__":
+    test()
