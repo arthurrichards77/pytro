@@ -24,6 +24,8 @@ class LpTraj:
         ay=[]
         mx=[]
         my=[]
+        dx=[]
+        dy=[]
         for kk in range(Nt):
             # accelerations
             ax.append(LpVariable("ax%i" % kk,-amax,amax))
@@ -37,6 +39,9 @@ class LpTraj:
             # velocities
             vx.append(LpVariable("vx%i" % (kk+1)))
             vy.append(LpVariable("vy%i" % (kk+1)))
+            # distances
+            dx.append(LpVariable("dx%i" % kk,0.0,xbounds[1]-xbounds[0]))
+            dy.append(LpVariable("dy%i" % kk,0.0,ybounds[1]-ybounds[0]))    
             
         # dynamics constraints
         for kk in range(Nt):
@@ -49,6 +54,11 @@ class LpTraj:
             self.lp += (mx[kk]>=-ax[kk])
             self.lp += (my[kk]>=ay[kk])
             self.lp += (my[kk]>=-ay[kk])
+            # distance magnitudes
+            self.lp += (dx[kk]>=x[kk+1]-x[kk])
+            self.lp += (dx[kk]>=x[kk]-x[kk+1])
+            self.lp += (dy[kk]>=y[kk+1]-y[kk])
+            self.lp += (dy[kk]>=y[kk]-y[kk+1])
 
         # initial constraints
         self.lp+=(x[0]==pstart[0])
@@ -63,9 +73,10 @@ class LpTraj:
         self.lp+=(vy[Nt]==pgoal[3])
 
         # objective
-        self.lp += (sum(mx)+sum(my))
+        self.lp += 0.001*(sum(mx)+sum(my))/self.amax + (sum(dx)+sum(dy))
 
 	# store the decision variables
+	# only the positions needed for now
 	self.x=x
 	self.y=y
 
@@ -124,6 +135,7 @@ class AvoidOpt:
                  xbounds=(-10.0,10.0),ybounds=(-10.0,10.0)):
         self.obststeps = []
         self.Nt = Nt
+        self.amax = amax
 	# create the completely relaxed LP and make it the only active node
         self.rootlp = LpTraj(Nt,dt,amax,pstart,pgoal,xbounds,ybounds)
 
@@ -169,8 +181,7 @@ class AvoidOpt:
                 continue
             # now check for unsatisfied avoidance constraints
 	    if verbosity>=2:
-                print "Checking steps"
- 	        print thisNode.steps
+                print "Checking steps" 	        
             for ob in thisNode.obststeps:
                 obs = ob.obsBox
                 kk = ob.timeStep
@@ -254,12 +265,12 @@ class AvoidOpt:
         plt.show()
 
 def test():
-    opt = AvoidOpt(Nt=10,dt=0.4,pgoal=[2.4,0.5,0.0,0.5])
+    opt = AvoidOpt(Nt=6,dt=1.0,pgoal=[2.4,0.5,0.0,-0.5],amax=100)
     testobs = [0.45, 1.0, -0.25, 1.9]
     opt.addStaticObstacle(testobs)
     testobs = [1.3, 1.9, -0.95, 0.1]
     opt.addStaticObstacle(testobs)
-    opt.solve()
+    opt.solve(verbosity=0)
     opt.plot()
 
 if __name__=="__main__":
