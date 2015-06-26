@@ -267,7 +267,7 @@ class AvoidOpt:
 
 def test():
     testobs = [0.45, 1.80, -0.25, 0.6]
-    res = AvoidOpt(obs=testobs,Nt=10,dt=0.4,pgoal=[2.4,0.5,0.0,-0.5])
+    res = AvoidOpt(obs=testobs,Nt=10,dt=0.4,pgoal=[2.4,0.5,0.0,0.5])
     #plot
     res.plot()
 
