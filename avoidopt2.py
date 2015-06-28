@@ -80,8 +80,8 @@ class LpTraj:
 	self.x=x
 	self.y=y
 
-    def solve(self):
-        self.result = self.lp.solve()
+    def solve(self, solver=None):
+        self.result = self.lp.solve(solver=solver)
         self.xvalue=[xv.varValue for xv in self.x]
         self.yvalue=[yv.varValue for yv in self.y]
         self.objValue = self.lp.objective.value()
@@ -112,8 +112,8 @@ class BbNode:
         self.verbosity = verbosity
         self.id = ''
 
-    def solve(self):
-        self.result = self.trajlp.solve()
+    def solve(self, solver=None):
+        self.result = self.trajlp.solve(solver=solver)
         self.bound = self.trajlp.objValue
         if self.verbosity>=2:
             print self.id + (" LP result = %i" % self.result)
@@ -145,7 +145,7 @@ class AvoidOpt:
         # hack to ensure plotting works during testing
         self.obs = obsBox
 
-    def solve(self, maxsolves=1000, verbosity=1):
+    def solve(self, solver=None, maxsolves=1000, verbosity=1):
         # initialize branch and bound tree with single root node
         self.bblist = [BbNode(self.rootlp,-np.inf,self.obststeps,verbosity)]
         inccost=np.inf
@@ -167,7 +167,7 @@ class AvoidOpt:
                     print("LP bound above incumbent")
                 continue
             # solve the thing
-            thisNode.solve()
+            thisNode.solve(solver=solver)
             # if it was infeasible
             if thisNode.result<0:
                 # also fathomed
@@ -270,7 +270,13 @@ def test():
     opt.addStaticObstacle(testobs)
     testobs = [1.3, 1.9, -0.95, 0.1]
     opt.addStaticObstacle(testobs)
-    opt.solve(verbosity=0)
+    try:
+        # solve by Gurobi, if installed
+        opt.solve(solver=pulp.GUROBI())
+    except PulpSolverError:
+        # or solve by PuLP default built-in solver
+        opt.solve()
+    # all being well, plot the trajectory
     opt.plot()
 
 if __name__=="__main__":
