@@ -2,6 +2,7 @@ import numpy as np
 from pulp import *
 import matplotlib.pyplot as plt
 import copy
+import time
 
 class LpTraj:
 
@@ -149,12 +150,15 @@ class AvoidOpt:
         # initialize branch and bound tree with single root node
         self.bblist = [BbNode(self.rootlp,-np.inf,self.obststeps,verbosity)]
         inccost=np.inf
+        # start timer for reporting solution time
+        self.starttime = time.time()
 
         for ii in range(maxsolves):
             if verbosity>=1:
                 print("Node %i : inc %f : node list %i" % (ii, inccost, len(self.bblist)))
             if len(self.bblist)<1:
-                print "Optimal solution found after %i nodes." % ii
+                solveTime = time.time()-self.starttime
+                print "Optimal solution found after %i nodes in %f seconds." % (ii, solveTime)
                 break
             if verbosity>=2:
                  print("Num active nodes = %i" % len(self.bblist))
