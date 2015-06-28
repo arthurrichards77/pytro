@@ -9,12 +9,12 @@ class LpTraj:
                  pstart=[0.0,0.0,0.0,0.0], pgoal=[1.5,1.0,0.0,0.5],
                  xbounds=(-10.0,10.0),ybounds=(-10.0,10.0)):
         self.Nt = Nt
-	self.dt = dt
+        self.dt = dt
         self.amax = amax
         self.pstart = pstart
         self.pgoal = pgoal
-	# make a new LP
-	self.lp = LpProblem("LpTraj",LpMinimize)
+        # make a new LP
+        self.lp = LpProblem("LpTraj",LpMinimize)
         # set up var lists
         x=[LpVariable("x0",xbounds[0],xbounds[1])]
         y=[LpVariable("y0",ybounds[0],ybounds[1])]
@@ -40,7 +40,7 @@ class LpTraj:
             
         # dynamics constraints
         for kk in range(Nt):
-	    self.lp += (x[kk]+dt*vx[kk]+dt*dt*0.5*ax[kk]==x[kk+1])
+            self.lp += (x[kk]+dt*vx[kk]+dt*dt*0.5*ax[kk]==x[kk+1])
             self.lp += (y[kk]+dt*vy[kk]+dt*dt*0.5*ay[kk]==y[kk+1])
             self.lp += (vx[kk]+dt*ax[kk]==vx[kk+1])
             self.lp += (vy[kk]+dt*ay[kk]==vy[kk+1])
@@ -65,20 +65,20 @@ class LpTraj:
         # objective
         self.lp += (sum(mx)+sum(my))
 
-	# store the decision variables
-	self.x=x
-	self.y=y
+        # store the decision variables
+        self.x=x
+        self.y=y
 
     def solve(self):
         self.result = self.lp.solve()
         self.xvalue=[xv.varValue for xv in self.x]
         self.yvalue=[yv.varValue for yv in self.y]
         self.objValue = self.lp.objective.value()
-	return(self.result)
+        return(self.result)
 
     def plot(self):
-	plt.plot(self.xvalue,self.yvalue,'.b-')
-	plt.show()
+        plt.plot(self.xvalue,self.yvalue,'.b-')
+        plt.show()
 
 def lpTest():
     test = LpTraj()
@@ -97,16 +97,16 @@ class BbNode:
 
     def solve(self):
         self.result = self.trajlp.solve()
-	self.bound = self.trajlp.objValue
+        self.bound = self.trajlp.objValue
         if self.verbosity>=2:
-    	    print self.id + (" LP result = %i" % self.result)
+            print self.id + (" LP result = %i" % self.result)
         return self.result
 
     def deepcopy(self):
         newNode = copy.copy(self)
         # need fresh list of steps to check
-	newNode.steps = copy.copy(self.steps)
-	# need to do this specially so it doesn't break PuLP
+        newNode.steps = copy.copy(self.steps)
+        # need to do this specially so it doesn't break PuLP
         newNode.trajlp = copy.copy(self.trajlp)
         newNode.trajlp.lp = newNode.trajlp.lp.deepcopy()
         return(newNode)
@@ -149,7 +149,7 @@ class AvoidOpt:
                  obs = [0.45, 1.0, 0.25, 0.6],
                  maxsolves=1000, verbosity=1):
         self.obs = obs
-	# create the completely relaxed LP and make it the only active node
+        # create the completely relaxed LP and make it the only active node
         rootlp = LpTraj(Nt,dt,amax,pstart,pgoal,xbounds,ybounds)
         self.bblist = [BbNode(rootlp,-np.inf,range(Nt),verbosity)]
         inccost=np.inf
@@ -171,7 +171,7 @@ class AvoidOpt:
                     print("LP bound above incumbent")
                 continue
             # solve the thing
-	    thisNode.solve()
+            thisNode.solve()
             # if it was infeasible
             if thisNode.result<0:
                 # also fathomed
@@ -184,9 +184,9 @@ class AvoidOpt:
                     print("LP result above incumbent")
                 continue
             # now check for unsatisfied avoidance constraints
-	    if verbosity>=2:
+            if verbosity>=2:
                 print "Checking steps"
- 	        print thisNode.steps
+                print thisNode.steps
             for kk in thisNode.steps:
                 # is it in the box?
                 if thisNode.trajlp.x[kk].varValue<obs[0] and thisNode.trajlp.x[kk+1].varValue<obs[0]:
@@ -248,7 +248,7 @@ class AvoidOpt:
                     print("Feasible with cost %f" % thisNode.bound)
                 if thisNode.bound<inccost:
                     # got a new incumbent
-		    if verbosity>=2:
+                    if verbosity>=2:
                         print "New incumbent"
                     inccost=thisNode.bound
                     self.inctrajx=[xv.varValue for xv in thisNode.trajlp.x]
