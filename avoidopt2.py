@@ -24,6 +24,8 @@ class LpTraj:
         ay=[]
         mx=[]
         my=[]
+        dx=[]
+        dy=[]
         for kk in range(Nt):
             # accelerations
             ax.append(LpVariable("ax%i" % kk,-amax,amax))
@@ -37,6 +39,9 @@ class LpTraj:
             # velocities
             vx.append(LpVariable("vx%i" % (kk+1)))
             vy.append(LpVariable("vy%i" % (kk+1)))
+            # distances
+            dx.append(LpVariable("dx%i" % kk,0.0,xbounds[1]-xbounds[0]))
+            dy.append(LpVariable("dy%i" % kk,0.0,ybounds[1]-ybounds[0]))    
             
         # dynamics constraints
         for kk in range(Nt):
@@ -49,6 +54,11 @@ class LpTraj:
             self.lp += (mx[kk]>=-ax[kk])
             self.lp += (my[kk]>=ay[kk])
             self.lp += (my[kk]>=-ay[kk])
+            # distance magnitudes
+            self.lp += (dx[kk]>=x[kk+1]-x[kk])
+            self.lp += (dx[kk]>=x[kk]-x[kk+1])
+            self.lp += (dy[kk]>=y[kk+1]-y[kk])
+            self.lp += (dy[kk]>=y[kk]-y[kk+1])
 
         # initial constraints
         self.lp+=(x[0]==pstart[0])
@@ -63,11 +73,12 @@ class LpTraj:
         self.lp+=(vy[Nt]==pgoal[3])
 
         # objective
-        self.lp += (sum(mx)+sum(my))
+        self.lp += 0.001*(sum(mx)+sum(my))/self.amax + (sum(dx)+sum(dy))
 
-        # store the decision variables
-        self.x=x
-        self.y=y
+	# store the decision variables
+	# only the positions needed for now
+	self.x=x
+	self.y=y
 
     def solve(self):
         self.result = self.lp.solve()
@@ -86,12 +97,18 @@ def lpTest():
     print test.objValue
     test.plot()
 
+class ObstStep:
+
+    def __init__(self,obsBox,timeStep):
+        self.obsBox = obsBox
+        self.timeStep = timeStep
+
 class BbNode:
 
-    def __init__(self,trajlp,bound,steps,verbosity=2):
+    def __init__(self,trajlp,bound,obststeps,verbosity=2):
         self.trajlp = trajlp
         self.bound = bound
-        self.steps = steps
+        self.obststeps = obststeps
         self.verbosity = verbosity
         self.id = ''
 
@@ -105,53 +122,32 @@ class BbNode:
     def deepcopy(self):
         newNode = copy.copy(self)
         # need fresh list of steps to check
-        newNode.steps = copy.copy(self.steps)
-        # need to do this specially so it doesn't break PuLP
+        newNode.obststeps = copy.copy(self.obststeps)
+	# need to do this specially so it doesn't break PuLP
         newNode.trajlp = copy.copy(self.trajlp)
         newNode.trajlp.lp = newNode.trajlp.lp.deepcopy()
         return(newNode)
 
-def bbTest():
-    rootLP = LpTraj()
-    rootNode = BbNode(rootLP,-np.Inf,range(rootLP.Nt))
-    rootNode.solve()
-    print "Root objective = %f" % rootNode.trajlp.objValue
-    rootNode.trajlp.plot()
-    # test two new nodes
-    node2 = rootNode.deepcopy()
-    node2.trajlp.lp.addConstraint(node2.trajlp.x[3]<=0.8)
-    node3 = rootNode.deepcopy()
-    node3.trajlp.lp.addConstraint(node3.trajlp.x[3]>=1.2)
-    # solve them both
-    #print node2
-    #print node2.trajlp.lp
-    node2.solve()
-    print "Node 2 objective = %f" % node2.trajlp.objValue
-    node2.trajlp.plot()
-    #
-    #print node3
-    #print node3.trajlp.lp
-    node3.solve()
-    print "Node 3 objective = %f" % node3.trajlp.objValue
-    node3.trajlp.plot()
-    # and test a case that's infeasible
-    node4 = node3.deepcopy()
-    node4.trajlp.lp.addConstraint(node4.trajlp.x[3]<=1.1)
-    result = node4.solve()
-    print result
-    print "Node 4 objective = %f" % node4.bound
-    
 class AvoidOpt:
 
     def __init__(self,Nt=5,dt=0.5,amax=2,
                  pstart=[0.0,0.0,0.0,0.0], pgoal=[1.5,1.0,0.0,0.0],
-                 xbounds=(-10.0,10.0),ybounds=(-10.0,10.0),
-                 obs = [0.45, 1.0, 0.25, 0.6],
-                 maxsolves=1000, verbosity=1):
-        self.obs = obs
-        # create the completely relaxed LP and make it the only active node
-        rootlp = LpTraj(Nt,dt,amax,pstart,pgoal,xbounds,ybounds)
-        self.bblist = [BbNode(rootlp,-np.inf,range(Nt),verbosity)]
+                 xbounds=(-10.0,10.0),ybounds=(-10.0,10.0)):
+        self.obststeps = []
+        self.Nt = Nt
+        self.amax = amax
+	# create the completely relaxed LP and make it the only active node
+        self.rootlp = LpTraj(Nt,dt,amax,pstart,pgoal,xbounds,ybounds)
+
+    def addStaticObstacle(self,obsBox):
+        # needs to be added "for all time steps"
+        self.obststeps += [ObstStep(obsBox,kk) for kk in range(self.Nt)]
+        # hack to ensure plotting works during testing
+        self.obs = obsBox
+
+    def solve(self, maxsolves=1000, verbosity=1):
+        # initialize branch and bound tree with single root node
+        self.bblist = [BbNode(self.rootlp,-np.inf,self.obststeps,verbosity)]
         inccost=np.inf
 
         for ii in range(maxsolves):
@@ -184,10 +180,11 @@ class AvoidOpt:
                     print("LP result above incumbent")
                 continue
             # now check for unsatisfied avoidance constraints
-            if verbosity>=2:
-                print "Checking steps"
-                print thisNode.steps
-            for kk in thisNode.steps:
+	    if verbosity>=2:
+                print "Checking steps" 	        
+            for ob in thisNode.obststeps:
+                obs = ob.obsBox
+                kk = ob.timeStep
                 # is it in the box?
                 if thisNode.trajlp.x[kk].varValue<obs[0] and thisNode.trajlp.x[kk+1].varValue<obs[0]:
                     if verbosity>=2:
@@ -210,7 +207,7 @@ class AvoidOpt:
                         print("Incursion step %i" % kk)
                     # I'm inside - branch on the first one found
                     # make the new list of steps
-                    thisNode.steps.remove(kk)
+                    thisNode.obststeps.remove(ob)
                     # four new subproblems - left
                     p1 = thisNode.deepcopy()
                     p1.trajlp.lp.addConstraint(p1.trajlp.x[kk]<=obs[0])
@@ -261,15 +258,20 @@ class AvoidOpt:
             print "Node limit of %i reached" % ii
 
     def plot(self):
-        plt.plot(self.inctrajx,self.inctrajy,'sb-',
-                 [self.obs[0],self.obs[0],self.obs[1],self.obs[1],self.obs[0]],[self.obs[2],self.obs[3],self.obs[3],self.obs[2],self.obs[2]],'r-')
+        plt.plot(self.inctrajx,self.inctrajy,'sb-')
+        for ob in self.obststeps:
+            obs = ob.obsBox
+            plt.plot([obs[0],obs[0],obs[1],obs[1],obs[0]],[obs[2],obs[3],obs[3],obs[2],obs[2]],'r-')
         plt.show()
 
 def test():
-    testobs = [0.45, 1.80, -0.25, 0.6]
-    res = AvoidOpt(obs=testobs,Nt=10,dt=0.4,pgoal=[2.4,0.5,0.0,-0.5])
-    #plot
-    res.plot()
+    opt = AvoidOpt(Nt=6,dt=1.0,pgoal=[2.4,0.5,0.0,-0.5],amax=100)
+    testobs = [0.45, 1.0, -0.25, 1.9]
+    opt.addStaticObstacle(testobs)
+    testobs = [1.3, 1.9, -0.95, 0.1]
+    opt.addStaticObstacle(testobs)
+    opt.solve(verbosity=0)
+    opt.plot()
 
 if __name__=="__main__":
     test()
