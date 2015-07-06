@@ -146,6 +146,11 @@ class AvoidOpt:
         # hack to ensure plotting works during testing
         self.obs = obsBox
 
+    def _get_next_node(self):
+        # next_node = self.bblist.pop()
+        next_node = self.bblist.pop(0)        
+        return(next_node)
+
     def solve(self, solver=None, maxsolves=1000, verbosity=1):
         # initialize branch and bound tree with single root node
         self.bblist = [BbNode(self.rootlp,-np.inf,self.obststeps,verbosity)]
@@ -163,7 +168,7 @@ class AvoidOpt:
             if verbosity>=2:
                  print("Num active nodes = %i" % len(self.bblist))
             # depth first - so grab last node
-            thisNode = self.bblist.pop()
+            thisNode = self._get_next_node()
             # check if it still needs solving
             if thisNode.bound>inccost:
                 # fathomed
@@ -278,6 +283,7 @@ def test():
         # solve by Gurobi, if installed
         opt.solve(solver=pulp.GUROBI())
     except PulpSolverError:
+        print("Could not find Gurobi - trying built-in solver")
         # or solve by PuLP default built-in solver
         opt.solve()
     # all being well, plot the trajectory
