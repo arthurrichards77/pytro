@@ -6,28 +6,30 @@ import time
 
 
 
-class LTraj(LpProblem):
+class LTraj(pulp.LpProblem):
 
     def __init__(self,A,B,Nt,name="NoName",sense=1):
         # store dynamics and horizon
-        self.A = A
-        self.B = B
+        self.A = np.array(A)
+        self.B = np.array(B)
         self.Nt = Nt
         # store sizes
-        self.num_states = A.shape[0]
-        self.num_inputs = B.shape[1]
+        self.num_states = self.A.shape[0]
+        self.num_inputs = self.B.shape[1]
         # check size compatibility
-        assert A.shape[1]==A.shape[0], "A must be square"
-        assert B.shape[0]==A.shape[0], "B must have same row count as A"
+        assert self.A.shape[1]==self.A.shape[0], "A must be square"
+        assert self.B.shape[0]==self.A.shape[0], "B must have same row count as A"
         # initialize parent Pulp class
-        LpProblem.__init__(self, name, sense)
+        pulp.LpProblem.__init__(self, name, sense)
+        # begin with no objective at all
+        self+=0.0
 	# set up state and input variables
         self.var_x = [self.newVarVector("x(0)",self.num_states)]
         self.var_u = []
         for kk in range(self.Nt):
             self.var_x.append(self.newVarVector("x(%i)" % (kk+1),self.num_states))
             self.var_u.append(self.newVarVector("u(%i)" % kk,self.num_inputs))
-            self.addVecEqZeroConstraint(np.dot(A,self.var_x[kk])+np.dot(B,self.var_u[kk]) - self.var_x[kk+1])
+            self.addVecEqualZeroConstraint(np.dot(self.A,self.var_x[kk])+np.dot(self.B,self.var_u[kk]) - self.var_x[kk+1])
 
     def newVarVector(self,name,num_elems):
         v = []
@@ -37,20 +39,69 @@ class LTraj(LpProblem):
             self.addVariable(newvar)
         return v
     
-    def addVecEqZeroConstraint(self,vector_expression):
+    def addVecEqualZeroConstraint(self,vector_expression):
         for ee in vector_expression:
             self.addConstraint(ee==0.0)
 
+    def addVecLessEqZeroConstraint(self,vector_expression):
+        for ee in vector_expression:
+            self.addConstraint(ee<=0.0)
+
+    def addMaxVarConstraint(self,vector_expression):
+        # adds decision variable to grab max(e)
+        newvar = pulp.LpVariable("_max%i" % (self.numVariables()+1))
+        for ee in vector_expression:
+            self.addConstraint(ee-newvar<=0.0)
+        return newvar
+
     def setInitialState(self,x0):
-        self.addVecEqZeroConstraint(self.var_x[0]-np.array(x0))
+        self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0))
 
     def setTerminalState(self,xN):
-        self.addVecEqZeroConstraint(self.var_x[self.Nt]-np.array(xN))
+        self.addVecEqualZeroConstraint(self.var_x[self.Nt]-np.array(xN))
 
-    def plotStates(self):
+    def addInfNormStageCost(self,E,F):
+        # adds sum_k ||Ex(k)+Fu(k)||_inf to cost
+        for kk in range(self.Nt):
+            newvar=self.addMaxVarConstraint(
+                np.hstack((
+                    np.dot(np.array(E),self.var_x[kk])+np.dot(np.array(F),self.var_u[kk]),
+                    np.dot(-np.array(E),self.var_x[kk])+np.dot(-np.array(F),self.var_u[kk])
+                ))
+            )
+            self.objective += newvar
+
+    def plotStateHistory(self):
         for ii in range(self.num_states):
             plt.plot([x[ii].varValue for x in self.var_x])
         plt.show()
+
+    def plotTraj2D(self,ind_x=0,ind_y=1):
+        plt.plot([x[ind_x].varValue for x in self.var_x],[x[ind_y].varValue for x in self.var_x])
+        plt.show()
+
+def ltrajTest():
+    dt = 0.5
+    A = [[1.0,dt],[0.0,1.0]]
+    B = [[0.5*dt*dt],[dt]]
+    lt = LTraj(A,B,5)
+    lt.setInitialState([2.0,3.0])
+    lt.setTerminalState([4.0,5.0])
+    lt.solve()
+    lt.plotStateHistory()
+
+def ltrajTest2():
+    A = np.eye(2)
+    B = np.eye(2)
+    lt = LTraj(A,B,5)
+    lt.setInitialState([2.0,3.0])
+    lt.setTerminalState([4.0,4.0])
+    lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.addConstraint(lt.var_x[2][1]>=5.5)
+    #lt.addInfNormStageCost(np.eye(2),np.zeros((2,2)))
+    lt.solve()
+    lt.plotStateHistory()
+    lt.plotTraj2D()
 
 class LpTraj:
 
