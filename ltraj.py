@@ -86,6 +86,62 @@ class LTraj(LpProbVectors):
         plt.plot([x[ind_x].varValue for x in self.var_x],[x[ind_y].varValue for x in self.var_x])
         plt.show()
 
+def LpProbUnionCons(LpProbVectors):
+
+    def __init__(self,name="NoName",sense=1):
+        # initialize parent Pulp class
+        pulp.LpProblem.__init__(self, name, sense)
+        # and set list of union constraints to zero
+        self.union_cons = []
+
+    def addUnionConstraint(self,c):
+        # c should be a tuple of vector expressions
+        # constraint x in union{c[0]<=0, c[1]<=0, ...}
+        # elements do not have to be same size
+        self.union_cons.append(c)
+
+    def _getNextNode(self):
+        # depth first for now
+        node = self.node_list.pop()
+        return(node)
+
+    def _unionFeasible(self):
+        pass
+
+    def _branch(self,branch_node):
+        pass
+
+    def solveByMILP(self):
+        pass
+
+    def solveByBranchBound(self,Nmaxnodes=100):
+        # no lower bound yet
+        self.lower_bound = -np.inf
+        # initialize the node list with root ULP
+        self.node_list=[self.deepcopy()]
+        # incumbent
+        self.incumbent_cost=np.inf
+        # loop
+        for nn in range(Nmaxnodes):
+            this_node = self._getNextNode()
+            if this_node.lower_bound >= self.incumbent_cost:
+                # fathomed as can't improve
+                continue
+            this_node.solve()
+            if this_node.status < 0:
+                # fathomed as infeasible
+                continue
+            if this_node.objective.value() >= self.incumbent_cost:
+                # fathomed as did not improve
+                continue
+            if this_node._unionFeasible():
+                # awesome - this is my new incumbent
+                self.incumbent_cost = this_node.objective.value()
+                self.incumbent_node = this_node
+            else:
+                self._branch(this_node)
+
+
 def ltrajTest():
     dt = 0.5
     A = [[1.0,dt],[0.0,1.0]]
