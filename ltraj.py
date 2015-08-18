@@ -4,32 +4,7 @@ import matplotlib.pyplot as plt
 import copy
 import time
 
-
-
-class LTraj(pulp.LpProblem):
-
-    def __init__(self,A,B,Nt,name="NoName",sense=1):
-        # store dynamics and horizon
-        self.A = np.array(A)
-        self.B = np.array(B)
-        self.Nt = Nt
-        # store sizes
-        self.num_states = self.A.shape[0]
-        self.num_inputs = self.B.shape[1]
-        # check size compatibility
-        assert self.A.shape[1]==self.A.shape[0], "A must be square"
-        assert self.B.shape[0]==self.A.shape[0], "B must have same row count as A"
-        # initialize parent Pulp class
-        pulp.LpProblem.__init__(self, name, sense)
-        # begin with no objective at all
-        self+=0.0
-	# set up state and input variables
-        self.var_x = [self.newVarVector("x(0)",self.num_states)]
-        self.var_u = []
-        for kk in range(self.Nt):
-            self.var_x.append(self.newVarVector("x(%i)" % (kk+1),self.num_states))
-            self.var_u.append(self.newVarVector("u(%i)" % kk,self.num_inputs))
-            self.addVecEqualZeroConstraint(np.dot(self.A,self.var_x[kk])+np.dot(self.B,self.var_u[kk]) - self.var_x[kk+1])
+class LpProbVectors(pulp.LpProblem):
 
     def newVarVector(self,name,num_elems):
         v = []
@@ -54,6 +29,31 @@ class LTraj(pulp.LpProblem):
             self.addConstraint(ee-newvar<=0.0)
         return newvar
 
+class LTraj(LpProbVectors):
+
+    def __init__(self,A,B,Nt,name="NoName",sense=1):
+        # store dynamics and horizon
+        self.A = np.array(A)
+        self.B = np.array(B)
+        self.Nt = Nt
+        # store sizes
+        self.num_states = self.A.shape[0]
+        self.num_inputs = self.B.shape[1]
+        # check size compatibility
+        assert self.A.shape[1]==self.A.shape[0], "A must be square"
+        assert self.B.shape[0]==self.A.shape[0], "B must have same row count as A"
+        # initialize parent Pulp class
+        pulp.LpProblem.__init__(self, name, sense)
+        # begin with no objective at all
+        self+=0.0
+	# set up state and input variables
+        self.var_x = [self.newVarVector("x(0)",self.num_states)]
+        self.var_u = []
+        for kk in range(self.Nt):
+            self.var_x.append(self.newVarVector("x(%i)" % (kk+1),self.num_states))
+            self.var_u.append(self.newVarVector("u(%i)" % kk,self.num_inputs))
+            self.addVecEqualZeroConstraint(np.dot(self.A,self.var_x[kk])+np.dot(self.B,self.var_u[kk]) - self.var_x[kk+1])
+
     def setInitialState(self,x0):
         self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0))
 
@@ -70,6 +70,12 @@ class LTraj(pulp.LpProblem):
                 ))
             )
             self.objective += newvar
+
+    def add2NormStageCost(self,E,F,Nc=20):
+        # adds sum_k ||Ex(k)+Fu(k)||_2 to cost
+        # approximated by Nc linear constraints
+        M = np.transpose(np.vstack((np.cos(np.pi*np.array(range(Nc))/Nc),np.sin(np.pi*np.array(range(Nc))/Nc))))
+        self.addInfNormStageCost(np.dot(M,E),np.dot(M,F))
 
     def plotStateHistory(self):
         for ii in range(self.num_states):
@@ -96,8 +102,9 @@ def ltrajTest2():
     lt = LTraj(A,B,5)
     lt.setInitialState([2.0,3.0])
     lt.setTerminalState([4.0,4.0])
-    lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
-    lt.addConstraint(lt.var_x[2][1]>=5.5)
+    #lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.addConstraint(lt.var_x[2][0]>=5.5)
     #lt.addInfNormStageCost(np.eye(2),np.zeros((2,2)))
     lt.solve()
     lt.plotStateHistory()
