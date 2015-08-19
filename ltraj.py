@@ -86,7 +86,7 @@ class LTraj(LpProbVectors):
         plt.plot([x[ind_x].varValue for x in self.var_x],[x[ind_y].varValue for x in self.var_x])
         plt.show()
 
-def LpProbUnionCons(LpProbVectors):
+class LpProbUnionCons(LpProbVectors):
 
     def __init__(self,name="NoName",sense=1):
         # initialize parent Pulp class
@@ -109,9 +109,6 @@ def LpProbUnionCons(LpProbVectors):
         pass
 
     def _branch(self,branch_node):
-        pass
-
-    def solveByMILP(self):
         pass
 
     def solveByBranchBound(self,Nmaxnodes=100):
@@ -141,16 +138,41 @@ def LpProbUnionCons(LpProbVectors):
             else:
                 self._branch(this_node)
 
+    def _convertUnionToMILP(self,uc,M):
+        # number of regions
+        Nr = len(uc)
+        # expression for final binary constraint
+        bin_con = 0.0
+        for ii in range(Nr):
+            this_region_exp = uc[ii]
+            # new binary dec var
+            new_bin = pulp.LpVariable(("_b%i" % (self.numVariables()+1)),cat='Binary')
+            # new constraint for each inequality defining the region
+            for cc in this_region_exp:
+                self.addConstraint(cc-M*new_bin<=0)
+            # add the binary to the logic constraint
+            bin_con += new_bin
+        # add the logical constraint
+        self.addConstraint(bin_con <= (Nr-1))
 
-def ltrajTest():
-    dt = 0.5
-    A = [[1.0,dt],[0.0,1.0]]
-    B = [[0.5*dt*dt],[dt]]
-    lt = LTraj(A,B,5)
-    lt.setInitialState([2.0,3.0])
-    lt.setTerminalState([4.0,5.0])
-    lt.solve()
-    lt.plotStateHistory()
+    def _convertToMILP(self,M=100):
+        for uc in self.union_cons:
+            self._convertUnionToMILP(uc,M)
+
+    def solveByMILP(self,M=100):
+        self._convertToMILP(M)
+        self.solve()
+
+def unionTest():
+    lt = LpProbUnionCons()
+    x = pulp.LpVariable("x")
+    y = pulp.LpVariable("y")
+    lt += -x+y
+    r1=[x+1,-2-x,y-2,1-y]
+    r2=[x+3,-4-x,y-2,1-y]
+    lt.addUnionConstraint((r1,r2))
+    lt.solveByMILP()
+    return lt
 
 def ltrajTest2():
     A = np.eye(2)
@@ -165,131 +187,36 @@ def ltrajTest2():
     lt.solve()
     lt.plotStateHistory()
     lt.plotTraj2D()
+    return lt
 
-class LpTraj:
+class LTrajAvoid(LTraj,LpProbUnionCons):
 
-    def __init__(self,Nt=5,dt=0.5,amax=2.0,
-                 pstart=[0.0,0.0,0.0,0.0], pgoal=[1.5,1.0,0.0,0.5],
-                 xbounds=(-10.0,10.0),ybounds=(-10.0,10.0)):
-        self.Nt = Nt
-        self.dt = dt
-        self.amax = amax
-        self.pstart = pstart
-        self.pgoal = pgoal
-        # make a new LP
-        self.lp = LpProblem("LpTraj",LpMinimize)
-        # set up var lists
-        x=[LpVariable("x0",xbounds[0],xbounds[1])]
-        y=[LpVariable("y0",ybounds[0],ybounds[1])]
-        vx=[LpVariable("vx0")]
-        vy=[LpVariable("vy0")]
-        ax=[]
-        ay=[]
-        mx=[]
-        my=[]
-        dx=[]
-        dy=[]
-        for kk in range(Nt):
-            # accelerations
-            ax.append(LpVariable("ax%i" % kk,-amax,amax))
-            ay.append(LpVariable("ay%i" % kk,-amax,amax))
-            # acceleration magnitudes
-            mx.append(LpVariable("mx%i" % kk,0.0,amax))
-            my.append(LpVariable("my%i" % kk,0.0,amax))    
-            # positions
-            x.append(LpVariable("x%i" % (kk+1),xbounds[0],xbounds[1]))
-            y.append(LpVariable("y%i" % (kk+1),ybounds[0],ybounds[1]))
-            # velocities
-            vx.append(LpVariable("vx%i" % (kk+1)))
-            vy.append(LpVariable("vy%i" % (kk+1)))
-            # distances
-            dx.append(LpVariable("dx%i" % kk,0.0,xbounds[1]-xbounds[0]))
-            dy.append(LpVariable("dy%i" % kk,0.0,ybounds[1]-ybounds[0]))    
-            
-        # dynamics constraints
-        for kk in range(Nt):
-            self.lp += (x[kk]+dt*vx[kk]+dt*dt*0.5*ax[kk]==x[kk+1])
-            self.lp += (y[kk]+dt*vy[kk]+dt*dt*0.5*ay[kk]==y[kk+1])
-            self.lp += (vx[kk]+dt*ax[kk]==vx[kk+1])
-            self.lp += (vy[kk]+dt*ay[kk]==vy[kk+1])
-            # grab magitudes
-            self.lp += (mx[kk]>=ax[kk])
-            self.lp += (mx[kk]>=-ax[kk])
-            self.lp += (my[kk]>=ay[kk])
-            self.lp += (my[kk]>=-ay[kk])
-            # distance magnitudes
-            self.lp += (dx[kk]>=x[kk+1]-x[kk])
-            self.lp += (dx[kk]>=x[kk]-x[kk+1])
-            self.lp += (dy[kk]>=y[kk+1]-y[kk])
-            self.lp += (dy[kk]>=y[kk]-y[kk+1])
+    def __init__(self,A,B,Nt,name="NoName",sense=1):
+        LpProbUnionCons.__init__(self)
+        LTraj.__init__(self,A,B,Nt,name,sense)
+    
+    def addStatic2DObst(self,xmin,xmax,ymin,ymax,ind_x=0,ind_y=1):
+        for kk in range(self.Nt):
+            rleft = [self.var_x[kk][ind_x]-xmin, self.var_x[kk+1][ind_x]-xmin]
+            rright = [xmax-self.var_x[kk][ind_x], xmax-self.var_x[kk+1][ind_x]]
+            rbelow = [self.var_x[kk][ind_y]-ymin, self.var_x[kk+1][ind_y]-ymin]
+            rabove = [ymax-self.var_x[kk][ind_y], ymax-self.var_x[kk+1][ind_y]]
+            self.addUnionConstraint((rleft,rright,rabove,rbelow))
 
-        # initial constraints
-        self.lp+=(x[0]==pstart[0])
-        self.lp+=(y[0]==pstart[1])
-        self.lp+=(vx[0]==pstart[2])
-        self.lp+=(vy[0]==pstart[3])
-
-        # initial constraints
-        self.lp+=(x[Nt]==pgoal[0])
-        self.lp+=(y[Nt]==pgoal[1])
-        self.lp+=(vx[Nt]==pgoal[2])
-        self.lp+=(vy[Nt]==pgoal[3])
-
-        # objective
-        self.lp += 0.001*(sum(mx)+sum(my))/self.amax + (sum(dx)+sum(dy))
-
-	# store the decision variables
-	# only the positions needed for now
-	self.x=x
-	self.y=y
-
-    def solve(self, solver=None):
-        self.result = self.lp.solve(solver=solver)
-        self.xvalue=[xv.varValue for xv in self.x]
-        self.yvalue=[yv.varValue for yv in self.y]
-        self.objValue = self.lp.objective.value()
-        return(self.result)
-
-    def plot(self):
-        plt.plot(self.xvalue,self.yvalue,'.b-')
-        plt.show()
-
-def lpTest():
-    test = LpTraj()
-    test.solve()
-    print test.objValue
-    test.plot()
-
-class ObstStep:
-
-    def __init__(self,obsBox,timeStep):
-        self.obsBox = obsBox
-        self.timeStep = timeStep
-
-class BbNode:
-
-    def __init__(self,trajlp,bound,obststeps,verbosity=2):
-        self.trajlp = trajlp
-        self.bound = bound
-        self.obststeps = obststeps
-        self.verbosity = verbosity
-        self.id = ''
-
-    def solve(self, solver=None):
-        self.result = self.trajlp.solve(solver=solver)
-        self.bound = self.trajlp.objValue
-        if self.verbosity>=2:
-            print self.id + (" LP result = %i" % self.result)
-        return self.result
-
-    def deepcopy(self):
-        newNode = copy.copy(self)
-        # need fresh list of steps to check
-        newNode.obststeps = copy.copy(self.obststeps)
-	# need to do this specially so it doesn't break PuLP
-        newNode.trajlp = copy.copy(self.trajlp)
-        newNode.trajlp.lp = newNode.trajlp.lp.deepcopy()
-        return(newNode)
+def lavTest():
+    A = np.eye(2)
+    B = np.eye(2)
+    lt = LTrajAvoid(A,B,5)
+    lt.setInitialState([2.0,3.0])
+    lt.setTerminalState([8.0,4.0])
+    #lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.addStatic2DObst(2.5,3.5,1.5,4.5)
+    lt.addStatic2DObst(5.5,6.5,2.5,7.5)
+    #lt.addInfNormStageCost(np.eye(2),np.zeros((2,2)))
+    lt.solveByMILP()
+    lt.plotTraj2D()
+    return lt
 
 class AvoidOpt:
 
