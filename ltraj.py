@@ -160,7 +160,7 @@ class LpProbUnionCons(LpProbVectors):
             new_node.addVecLessEqZeroConstraint(rr)
             self.node_list.append(new_node)
 
-    def solveByBranchBound(self,Nmaxnodes=1000):
+    def solveByBranchBound(self,Nmaxnodes=1000,**kwargs):
         # no lower bound yet
         self.lower_bound = -np.inf
         # initialize the node list with root ULP
@@ -181,7 +181,7 @@ class LpProbUnionCons(LpProbVectors):
                 # fathomed as can't improve
                 print "%i : %i : %f : Fathom before solving bound=%f" % (nn,len(self.node_list),self.incumbent_cost,this_node.lower_bound)
                 continue
-            this_node.solve(solver=pulp.GUROBI())
+            this_node.solve(**kwargs)
             if this_node.status < 0:
                 # fathomed as infeasible
                 print "%i : %i : %f : Fathom infeasible status=%i" % (nn,len(self.node_list),self.incumbent_cost,this_node.status)
@@ -223,9 +223,9 @@ class LpProbUnionCons(LpProbVectors):
         for uc in self.union_cons:
             self._convertUnionToMILP(uc,M)
 
-    def solveByMILP(self,M=100):
+    def solveByMILP(self,M=100,**kwargs):
         self._convertToMILP(M)
-        self.solve(solver=pulp.GUROBI())
+        self.solve(**kwargs)
 
 def unionTest():
     lt = LpProbUnionCons()
@@ -277,7 +277,28 @@ def lavTest():
     lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
     lt.addStatic2DObst(2.5,3.5,1.5,4.5)
     lt.addStatic2DObst(5.5,6.5,3.5,7.5)
-    #lt.addInfNormStageCost(np.eye(2),np.zeros((2,2)))
-    lt.solve()
+    return lt
+
+def bbTest():
+    lt = lavTest()
+    try:
+        # solve by Gurobi, if installed
+        lt.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    except PulpSolverError:
+        print("Could not find Gurobi - trying built-in solver")
+        # or solve by PuLP default built-in solver
+        lt.solveByBranchBound()
+    lt.plotTraj2D()
+    return lt
+
+def milpTest():
+    lt = lavTest()
+    try:
+        # solve by Gurobi, if installed
+        lt.solveByMILP(solver=pulp.GUROBI())
+    except PulpSolverError:
+        print("Could not find Gurobi - trying built-in solver")
+        # or solve by PuLP default built-in solver
+        lt.solveByMILP()
     lt.plotTraj2D()
     return lt
