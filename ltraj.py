@@ -99,16 +99,41 @@ class LpProbUnionCons(LpProbVectors):
         pulp.LpProblem.__init__(self, name, sense)
         # and set list of union constraints to zero
         self.union_cons = []
+        self.union_cons_seqs = []
 
-    def addUnionConstraint(self,c):
+    def addUnionConstraint(self,c,seq=100):
         # c should be a tuple of vector expressions
         # constraint x in union{c[0]<=0, c[1]<=0, ...}
         # elements do not have to be same size
         self.union_cons.append(c)
+        self.union_cons_seqs.append(seq)
 
-    def _getNextNode(self):
-        # depth first for now
-        node = self.node_list.pop()
+    def _getNextNode(self,strategy='depth'):
+        if strategy=='depth':
+            # depth first search   
+            node = self.node_list.pop()
+        elif strategy=='breadth':
+            # breadth first search
+            node = self.node_list.pop(0)
+        elif strategy=='best_bound':
+            bound_list = [n.lower_bound for n in self.node_list]
+            best_idx = np.argmin(bound_list)
+            node = self.node_list.pop(best_idx)
+        elif strategy=='least_infeas':
+            infeas_list = [n.infeas for n in self.node_list]
+            best_idx = np.argmin(infeas_list)
+            node = self.node_list.pop(best_idx)
+        elif strategy=='random_hybrid':
+            # choose randomly between depth and breadth
+            if np.random.uniform()>0.5:
+                # depth
+                node = self.node_list.pop()
+            else:
+                # breadth
+                node = self.node_list.pop(0)
+        else:
+            # default back to depth first   
+            node = self.node_list.pop()
         return(node)
 
     def _solInUnionRegion(self,r):
@@ -147,6 +172,8 @@ class LpProbUnionCons(LpProbVectors):
         new_node.lower_bound = self.lower_bound
         # copy objective
         new_node.objective = self.objective.copy()
+        # infeasibility (used later for node selection)
+        new_node.infeas = 0
         # copy constraints
         new_node.constraints = self.constraints.copy()
         # note not bothering to copy node list, as only relevant for root
@@ -158,49 +185,69 @@ class LpProbUnionCons(LpProbVectors):
             new_node = parent_node._childNode()
             new_node.union_cons.pop(parent_node.first_violated_index)
             new_node.addVecLessEqZeroConstraint(rr)
+            new_node.infeas = np.max(self.vectorValue(rr))
             self.node_list.append(new_node)
 
-    def solveByBranchBound(self,Nmaxnodes=1000,**kwargs):
+    def _sort_unions(self):
+        # sort by supplied sequence number or priority
+        decorated = [(self.union_cons_seqs[i],i) for i in range(len(self.union_cons))]
+        decorated.sort()
+        self.union_cons = [self.union_cons[i] for (seq,i) in decorated]
+        # and sort the sequence list to avoid silliness
+        self.union_cons_seqs = [seq for (seq,i) in decorated]
+
+    def solveByBranchBound(self,Nmaxnodes=1000,strategy='depth',**kwargs):
+        start_time = time.clock()
         # no lower bound yet
         self.lower_bound = -np.inf
         # initialize the node list with root ULP
         self.node_list=[self._childNode()]
         # incumbent
         self.incumbent_cost=np.inf
+        # count number of actual solves
+        self.lp_count = 0
+        # sort the union constraints for efficiency
+        self._sort_unions()
         # loop
-        for nn in range(Nmaxnodes):            
+        for nn in range(Nmaxnodes):
+            # common message elements
+            bb_status_msg = "%i : %i : %i : %f" % (nn,self.lp_count,len(self.node_list),self.incumbent_cost)                    
             if len(self.node_list)==0:
                 # finished - no more nodes
-                print "%i : %i : %f : OPTIMAL no more nodes" % (nn,len(self.node_list),self.incumbent_cost)
+                print "%s : OPTIMAL no more nodes" % (bb_status_msg)
                 # copy result back to parent
                 for ii in range(len(self.variables())):
                     self.variables()[ii].varValue = self.incumbent_sol[ii]
                 break
-            this_node = self._getNextNode()
+            this_node = self._getNextNode(strategy)
             if this_node.lower_bound >= self.incumbent_cost:
                 # fathomed as can't improve
-                print "%i : %i : %f : Fathom before solving bound=%f" % (nn,len(self.node_list),self.incumbent_cost,this_node.lower_bound)
+                print "%s : Fathom before solving bound=%f" % (bb_status_msg,this_node.lower_bound)
                 continue
+            # solve the LP
+            # with unhandled arguments passed to solver
+            self.lp_count += 1
             this_node.solve(**kwargs)
             if this_node.status < 0:
                 # fathomed as infeasible
-                print "%i : %i : %f : Fathom infeasible status=%i" % (nn,len(self.node_list),self.incumbent_cost,this_node.status)
+                print "%s : Fathom infeasible status=%i" % (bb_status_msg,this_node.status)
                 continue
             if this_node.objective.value() >= self.incumbent_cost:
                 # fathomed as did not improve
-                print "%i : %i : %f : Fathom after solving cost=%f" % (nn,len(self.node_list),self.incumbent_cost,this_node.objective.value())
+                print "%s : Fathom after solving cost=%f" % (bb_status_msg,this_node.objective.value())
                 continue
             if this_node._unionFeasible():
                 # awesome - this is my new incumbent
                 self.incumbent_cost = this_node.objective.value()
                 self.incumbent_node = this_node
                 self.incumbent_sol = [vv.varValue for vv in this_node.variables()]
-                print "%i : %i : %f : New incumbent %f" % (nn,len(self.node_list),self.incumbent_cost,this_node.objective.value())                
+                print "%s : New incumbent %f" % (bb_status_msg,this_node.objective.value())                
             else:
                 self._branch(this_node)
-                print "%i : %i : %f : Branched with bound=%f" % (nn,len(self.node_list),self.incumbent_cost,this_node.objective.value())                
+                print "%s : Branched with bound=%f" % (bb_status_msg,this_node.objective.value())                
         else:
-            print "%i : %i : %f : Node limit reached" % (nn,len(self.node_list),self.incumbent_cost)                
+            print "%s : Node limit reached" % (bb_status_msg)                
+        self.solve_time = time.clock() - start_time
 
     def _convertUnionToMILP(self,uc,M):
         # number of regions
@@ -224,8 +271,10 @@ class LpProbUnionCons(LpProbVectors):
             self._convertUnionToMILP(uc,M)
 
     def solveByMILP(self,M=100,**kwargs):
+        start_time = time.clock()
         self._convertToMILP(M)
         self.solve(**kwargs)
+        self.solve_time = time.clock() - start_time
 
 def unionTest():
     lt = LpProbUnionCons()
@@ -265,7 +314,7 @@ class LTrajAvoid(LTraj,LpProbUnionCons):
             rright = [xmax-self.var_x[kk][ind_x], xmax-self.var_x[kk+1][ind_x]]
             rbelow = [self.var_x[kk][ind_y]-ymin, self.var_x[kk+1][ind_y]-ymin]
             rabove = [ymax-self.var_x[kk][ind_y], ymax-self.var_x[kk+1][ind_y]]
-            self.addUnionConstraint((rleft,rright,rabove,rbelow))
+            self.addUnionConstraint((rleft,rright,rabove,rbelow),seq=kk)
 
 def lavTest():
     A = np.eye(2)
