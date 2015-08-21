@@ -281,10 +281,10 @@ def lavTest():
 
 def bbTest():
     lt = lavTest()
-    try:
+    if pulp.GUROBI().available():
         # solve by Gurobi, if installed
         lt.solveByBranchBound(solver=pulp.GUROBI(msg=0))
-    except PulpSolverError:
+    else:
         print("Could not find Gurobi - trying built-in solver")
         # or solve by PuLP default built-in solver
         lt.solveByBranchBound()
@@ -293,10 +293,10 @@ def bbTest():
 
 def milpTest():
     lt = lavTest()
-    try:
+    if pulp.GUROBI().available():
         # solve by Gurobi, if installed
         lt.solveByMILP(solver=pulp.GUROBI())
-    except PulpSolverError:
+    else:
         print("Could not find Gurobi - trying built-in solver")
         # or solve by PuLP default built-in solver
         lt.solveByMILP()
