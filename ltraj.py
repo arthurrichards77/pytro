@@ -196,7 +196,14 @@ class LpProbUnionCons(LpProbVectors):
         # and sort the sequence list to avoid silliness
         self.union_cons_seqs = [seq for (seq,i) in decorated]
 
-    def solveByBranchBound(self,Nmaxnodes=1000,strategy='depth',**kwargs):
+    def _status_msg(self,msg):
+        if self.verbosity>=10:
+            if np.mod(self.lp_count,self.verbosity)==0:
+                print "%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg)
+        elif self.verbosity>=1:
+            print "%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg)
+
+    def solveByBranchBound(self,Nmaxnodes=1000,strategy='depth',verbosity=1,**kwargs):
         start_time = time.clock()
         # no lower bound yet
         self.lower_bound = -np.inf
@@ -208,21 +215,19 @@ class LpProbUnionCons(LpProbVectors):
         self.lp_count = 0
         # sort the union constraints for efficiency
         self._sort_unions()
+        # store verbosity setting
+        self.verbosity = verbosity
         # loop
-        for nn in range(Nmaxnodes):
-            # common message elements
-            bb_status_msg = "%i : %i : %i : %f" % (nn,self.lp_count,len(self.node_list),self.incumbent_cost)                    
+        for nn in range(Nmaxnodes):                                
             if len(self.node_list)==0:
                 # finished - no more nodes
-                print "%s : OPTIMAL no more nodes" % (bb_status_msg)
-                # copy result back to parent
-                for ii in range(len(self.variables())):
-                    self.variables()[ii].varValue = self.incumbent_sol[ii]
+                self.status=1
+                self._status_msg("OPTIMAL no more nodes")                
                 break
             this_node = self._getNextNode(strategy)
             if this_node.lower_bound >= self.incumbent_cost:
                 # fathomed as can't improve
-                print "%s : Fathom before solving bound=%f" % (bb_status_msg,this_node.lower_bound)
+                self._status_msg("Fathom before solving bound=%f" % (this_node.lower_bound))
                 continue
             # solve the LP
             # with unhandled arguments passed to solver
@@ -230,23 +235,30 @@ class LpProbUnionCons(LpProbVectors):
             this_node.solve(**kwargs)
             if this_node.status < 0:
                 # fathomed as infeasible
-                print "%s : Fathom infeasible status=%i" % (bb_status_msg,this_node.status)
+                self._status_msg("Fathom infeasible status=%i" % (this_node.status))
                 continue
             if this_node.objective.value() >= self.incumbent_cost:
                 # fathomed as did not improve
-                print "%s : Fathom after solving cost=%f" % (bb_status_msg,this_node.objective.value())
+                self._status_msg("Fathom after solving cost=%f" % (this_node.objective.value()))
                 continue
             if this_node._unionFeasible():
                 # awesome - this is my new incumbent
                 self.incumbent_cost = this_node.objective.value()
                 self.incumbent_node = this_node
                 self.incumbent_sol = [vv.varValue for vv in this_node.variables()]
-                print "%s : New incumbent %f" % (bb_status_msg,this_node.objective.value())                
+                self._status_msg("New incumbent %f" % (this_node.objective.value()))                
             else:
                 self._branch(this_node)
-                print "%s : Branched with bound=%f" % (bb_status_msg,this_node.objective.value())                
+                self._status_msg("Branched with bound=%f" % (this_node.objective.value()))                
         else:
-            print "%s : Node limit reached" % (bb_status_msg)                
+            self.status=0
+            self._status_msg("Iteration limit reached")
+        # if ever found solution
+        if self.incumbent_cost<np.inf:
+            # copy result back to parent
+            for ii in range(len(self.variables())):
+                self.variables()[ii].varValue = self.incumbent_sol[ii]                
+        # stop the clock
         self.solve_time = time.clock() - start_time
 
     def _convertUnionToMILP(self,uc,M):
@@ -323,7 +335,7 @@ def lavTest():
     lt.setInitialState([2.0,3.0])
     lt.setTerminalState([8.0,4.0])
     #lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
-    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2),Nc=11)
     lt.addStatic2DObst(2.5,3.5,1.5,4.5)
     lt.addStatic2DObst(5.5,6.5,3.5,7.5)
     return lt
@@ -351,3 +363,32 @@ def milpTest():
         lt.solveByMILP()
     lt.plotTraj2D()
     return lt
+
+def randomTest(num_boxes=3,method='MILP',**kwargs):
+    A = np.eye(2)
+    B = np.eye(2)
+    lt = LTrajAvoid(A,B,5)
+    lt.setInitialState([0.0,0.0])
+    lt.setTerminalState([10.0,10.0])
+    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
+    box_ctrs = np.random.uniform(low=2.0,high=8.0,size=(num_boxes,2))
+    box_sizes = np.random.uniform(low=0.1,high=0.75,size=(num_boxes,2))
+    plt.cla()
+    for bb in range(num_boxes):
+        this_box = (box_ctrs[bb,0]-box_sizes[bb,0],
+            box_ctrs[bb,0]+box_sizes[bb,0],
+            box_ctrs[bb,1]-box_sizes[bb,1],
+            box_ctrs[bb,1]+box_sizes[bb,1])
+        assert this_box[1]>this_box[0]
+        assert this_box[3]>this_box[2]
+        lt.addStatic2DObst(this_box[0],this_box[1],this_box[2],this_box[3])
+        plt.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],[this_box[2],this_box[3],this_box[3],this_box[2],this_box[2]],'r')
+    # solve it
+    if method=='MILP':
+        lt.solveByMILP(**kwargs)
+        lt.plotTraj2D()
+    elif method=='BNB':
+        lt.solveByBranchBound(**kwargs)
+        lt.plotTraj2D()
+    return lt
+
