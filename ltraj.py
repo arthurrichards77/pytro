@@ -17,7 +17,7 @@ class LpProbVectors(pulp.LpProblem):
     def addVecEqualZeroConstraint(self,vector_expression):
         for ee in vector_expression:
             self.addConstraint(ee==0.0)
-
+        
     def addVecLessEqZeroConstraint(self,vector_expression):
         for ee in vector_expression:
             self.addConstraint(ee<=0.0)
