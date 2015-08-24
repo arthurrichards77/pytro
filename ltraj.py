@@ -14,9 +14,13 @@ class LpProbVectors(pulp.LpProblem):
             self.addVariable(newvar)
         return v
     
-    def addVecEqualZeroConstraint(self,vector_expression):
-        for ee in vector_expression:
-            self.addConstraint(ee==0.0)
+    def addVecEqualZeroConstraint(self,vector_expression,name=None):
+        for ii,ee in enumerate(vector_expression):
+            if name is not None:
+                loc_name = "%s_%i" % (name,ii)
+            else:
+                loc_name = None
+            self.addConstraint(ee==0.0,name=loc_name)
         
     def addVecLessEqZeroConstraint(self,vector_expression):
         for ee in vector_expression:
@@ -61,7 +65,7 @@ class LTraj(LpProbVectors):
             self.addVecEqualZeroConstraint(np.dot(self.A,self.var_x[kk])+np.dot(self.B,self.var_u[kk]) - self.var_x[kk+1])
 
     def setInitialState(self,x0):
-        self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0))
+        self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0),name='xinit')
 
     def setTerminalState(self,xN):
         self.addVecEqualZeroConstraint(self.var_x[self.Nt]-np.array(xN))
