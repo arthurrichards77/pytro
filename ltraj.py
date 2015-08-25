@@ -4,8 +4,23 @@ import matplotlib.pyplot as plt
 import copy
 import time
 
+def lpAffExpAsTuple(ee):
+    return tuple([(v[0].name,v[1]) for v in ee.items()])
+
+def oppositeLpExpAsTuple(ee):
+    return tuple([(v[0].name,-v[1]) for v in ee.items()])
+
+def lpConstraintsOppose(e1,e2):
+    return lpAffExpAsTuple(e1)==oppositeLpExpAsTuple(e2)
+
 class LpProbVectors(pulp.LpProblem):
 
+    def __init__(self,name="NoName",sense=1):
+        # initialize parent Pulp class
+        pulp.LpProblem.__init__(self, name, sense)
+        self.leq_list = []
+        self.contradictory = False
+        
     def newVarVector(self,name,num_elems):
         v = []
         for ii in range(num_elems):
@@ -21,10 +36,24 @@ class LpProbVectors(pulp.LpProblem):
             else:
                 loc_name = None
             self.addConstraint(ee==0.0,name=loc_name)
+
+    def addLeqZeroConstraint(self,ee):
+        # capture this for quick feasibility checking
+        # add it as a constraint in usual way
+        self.addConstraint(ee<=0.0)
+        # extract opposing constants
+        opp_consts = [c.constant for c in self.leq_list if lpConstraintsOppose(ee,c)]
+        # check if present
+        if len(opp_consts)>0:
+            max_opp_const = np.max(opp_consts)
+            if max_opp_const > -ee.constant:
+                self.contradictory = True
+        # add new expression to the list
+        self.leq_list += [ee]
         
     def addVecLessEqZeroConstraint(self,vector_expression):
         for ee in vector_expression:
-            self.addConstraint(ee<=0.0)
+            self.addLeqZeroConstraint(ee)
 
     def addMaxVarConstraint(self,vector_expression):
         # adds decision variable to grab max(e)
@@ -53,7 +82,7 @@ class LTraj(LpProbVectors):
         assert self.A.shape[1]==self.A.shape[0], "A must be square"
         assert self.B.shape[0]==self.A.shape[0], "B must have same row count as A"
         # initialize parent Pulp class
-        pulp.LpProblem.__init__(self, name, sense)
+        LpProbVectors.__init__(self, name, sense)
         # begin with no objective at all
         self+=0.0
 	# set up state and input variables
@@ -67,8 +96,18 @@ class LTraj(LpProbVectors):
     def setInitialState(self,x0):
         self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0),name='xinit')
 
+    def changeInitState(self,x0):
+        assert len(x0)==self.num_states
+        for ii in range(self.num_states):
+            self.constraints[("xinit_%i" % ii)].changeRHS(x0[ii])
+
     def setTerminalState(self,xN):
-        self.addVecEqualZeroConstraint(self.var_x[self.Nt]-np.array(xN))
+        self.addVecEqualZeroConstraint(self.var_x[self.Nt]-np.array(xN),name='xterm')
+
+    def changeTermState(self,xN):
+        assert len(xN)==self.num_states
+        for ii in range(self.num_states):
+            self.constraints[("xterm_%i" % ii)].changeRHS(xN[ii])
 
     def addInfNormStageCost(self,E,F):
         # adds sum_k ||Ex(k)+Fu(k)||_inf to cost
@@ -92,18 +131,18 @@ class LTraj(LpProbVectors):
             plt.plot([x[ii].varValue for x in self.var_x])
         plt.show()
 
-    def plotTraj2D(self,ind_x=0,ind_y=1):
-        plt.plot([x[ind_x].varValue for x in self.var_x],[x[ind_y].varValue for x in self.var_x])
-        plt.show()
-
 class LpProbUnionCons(LpProbVectors):
 
-    def __init__(self,name="NoName",sense=1):
+    def __init__(self,name="NoName",sense=1,presolver=None):
         # initialize parent Pulp class
-        pulp.LpProblem.__init__(self, name, sense)
+        LpProbVectors.__init__(self, name, sense)
         # and set list of union constraints to zero
         self.union_cons = []
         self.union_cons_seqs = []
+        # identify incompatible combinations early
+        self.taboo_list = []
+        # store solver early if given
+        self.presolver = presolver
 
     def addUnionConstraint(self,c,seq=100):
         # c should be a tuple of vector expressions
@@ -111,6 +150,7 @@ class LpProbUnionCons(LpProbVectors):
         # elements do not have to be same size
         self.union_cons.append(c)
         self.union_cons_seqs.append(seq)
+        # self.updateTabooList()
 
     def _getNextNode(self,strategy='depth'):
         if strategy=='depth':
@@ -173,6 +213,7 @@ class LpProbUnionCons(LpProbVectors):
         new_node = LpProbUnionCons(name = self.name, sense = self.sense)
         # and copy the lower bound and the union constraints across
         new_node.union_cons = self.union_cons[:]
+        new_node.leq_list = self.leq_list[:]
         new_node.lower_bound = self.lower_bound
         # copy objective
         new_node.objective = self.objective.copy()
@@ -207,7 +248,7 @@ class LpProbUnionCons(LpProbVectors):
         elif self.verbosity>=1:
             print "%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg)
 
-    def solveByBranchBound(self,Nmaxnodes=1000,strategy='depth',verbosity=1,**kwargs):
+    def solveByBranchBound(self,Nmaxnodes=1000,Nmaxiters=5000,strategy='depth',verbosity=1,**kwargs):
         start_time = time.clock()
         # no lower bound yet
         self.lower_bound = -np.inf
@@ -222,16 +263,26 @@ class LpProbUnionCons(LpProbVectors):
         # store verbosity setting
         self.verbosity = verbosity
         # loop
-        for nn in range(Nmaxnodes):                                
+        for nn in range(Nmaxiters):                                
             if len(self.node_list)==0:
                 # finished - no more nodes
                 self.status=1
                 self._status_msg("OPTIMAL no more nodes")                
                 break
+            if self.lp_count==Nmaxnodes:
+                # finished - no more nodes
+                self.status=0
+                self._status_msg("Node LP count limit reached")                
+                break
             this_node = self._getNextNode(strategy)
             if this_node.lower_bound >= self.incumbent_cost:
                 # fathomed as can't improve
                 self._status_msg("Fathom before solving bound=%f" % (this_node.lower_bound))
+                continue
+            # check for contradictory constraints
+            if this_node.contradictory:
+                # fathomed as won't solve
+                self._status_msg("Fathom due to incompatible bounds")
                 continue
             # solve the LP
             # with unhandled arguments passed to solver
@@ -320,17 +371,35 @@ def ltrajTest2():
 
 class LTrajAvoid(LTraj,LpProbUnionCons):
 
-    def __init__(self,A,B,Nt,name="NoName",sense=1):
+    def __init__(self,A,B,Nt,name="Trajectory",sense=1):
         LpProbUnionCons.__init__(self)
         LTraj.__init__(self,A,B,Nt,name,sense)
+
+class LTraj2DAvoid(LTrajAvoid):
+
+    def __init__(self,A,B,Nt,ind_x=0,ind_y=1,name="Trajectory",sense=1):
+        LTrajAvoid.__init__(self,A,B,Nt,name,sense)
+        self.ind_x = ind_x
+        self.ind_y = ind_y
+        self.boxes = []
     
-    def addStatic2DObst(self,xmin,xmax,ymin,ymax,ind_x=0,ind_y=1):
+    def addStatic2DObst(self,xmin,xmax,ymin,ymax):
+        self.boxes += [(xmin,xmax,ymin,ymax)]
         for kk in range(self.Nt):
-            rleft = [self.var_x[kk][ind_x]-xmin, self.var_x[kk+1][ind_x]-xmin]
-            rright = [xmax-self.var_x[kk][ind_x], xmax-self.var_x[kk+1][ind_x]]
-            rbelow = [self.var_x[kk][ind_y]-ymin, self.var_x[kk+1][ind_y]-ymin]
-            rabove = [ymax-self.var_x[kk][ind_y], ymax-self.var_x[kk+1][ind_y]]
+            rleft = [self.var_x[kk][self.ind_x]-xmin, self.var_x[kk+1][self.ind_x]-xmin]
+            rright = [xmax-self.var_x[kk][self.ind_x], xmax-self.var_x[kk+1][self.ind_x]]
+            rbelow = [self.var_x[kk][self.ind_y]-ymin, self.var_x[kk+1][self.ind_y]-ymin]
+            rabove = [ymax-self.var_x[kk][self.ind_y], ymax-self.var_x[kk+1][self.ind_y]]
             self.addUnionConstraint((rleft,rright,rabove,rbelow),seq=kk)
+
+    def plotBoxes(self):
+        for this_box in self.boxes:
+            plt.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],[this_box[2],this_box[3],this_box[3],this_box[2],this_box[2]],'r')
+
+    def plotTraj2D(self,ind_x=0,ind_y=1):
+        self.plotBoxes()
+        plt.plot([x[ind_x].varValue for x in self.var_x],[x[ind_y].varValue for x in self.var_x])
+        plt.show()
 
 def lavTest():
     A = np.eye(2)
@@ -371,7 +440,7 @@ def milpTest():
 def randomTest(num_boxes=3,method='MILP',**kwargs):
     A = np.eye(2)
     B = np.eye(2)
-    lt = LTrajAvoid(A,B,5)
+    lt = LTraj2DAvoid(A,B,5)
     lt.setInitialState([0.0,0.0])
     lt.setTerminalState([10.0,10.0])
     lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
@@ -385,8 +454,7 @@ def randomTest(num_boxes=3,method='MILP',**kwargs):
             box_ctrs[bb,1]+box_sizes[bb,1])
         assert this_box[1]>this_box[0]
         assert this_box[3]>this_box[2]
-        lt.addStatic2DObst(this_box[0],this_box[1],this_box[2],this_box[3])
-        plt.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],[this_box[2],this_box[3],this_box[3],this_box[2],this_box[2]],'r')
+        lt.addStatic2DObst(this_box[0],this_box[1],this_box[2],this_box[3])        
     # solve it
     if method=='MILP':
         lt.solveByMILP(**kwargs)
