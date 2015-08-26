@@ -1,5 +1,6 @@
 import numpy as np
 import pulp
+import mpl_toolkits.mplot3d as m3d
 import matplotlib.pyplot as plt
 import copy
 import time
@@ -12,6 +13,23 @@ def oppositeLpExpAsTuple(ee):
 
 def lpConstraintsOppose(e1,e2):
     return lpAffExpAsTuple(e1)==oppositeLpExpAsTuple(e2)
+
+def pointsOnHemisphere(Nel,Naz):
+    M = np.transpose(np.vstack((np.cos(np.pi*np.array(range(Naz))/Naz),np.sin(np.pi*np.array(range(Naz))/Naz))))        
+    el_range=np.array(range((1-Nel),Nel))*0.5*np.pi/Nel
+    el_range=np.reshape(el_range,(2*Nel-1,1))
+    M2 = np.kron(np.cos(el_range),M)
+    M3 = np.kron(np.sin(el_range),np.ones((Naz,1)))
+    M4 = np.hstack((M2,M3))
+    M5 = np.vstack((np.array([0,0,1]),M4))
+    return(M5)
+
+def testHemisphere(Nel=10,Naz=10):
+    M = pointsOnHemisphere(Nel,Naz)
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    ax.scatter(M[:,0],M[:,1],M[:,2])
+    plt.show()
 
 class LpProbVectors(pulp.LpProblem):
 
@@ -122,8 +140,16 @@ class LTraj(LpProbVectors):
 
     def add2NormStageCost(self,E,F,Nc=20):
         # adds sum_k ||Ex(k)+Fu(k)||_2 to cost
+        # where E and F must both have two rows
         # approximated by Nc linear constraints
         M = np.transpose(np.vstack((np.cos(np.pi*np.array(range(Nc))/Nc),np.sin(np.pi*np.array(range(Nc))/Nc))))
+        self.addInfNormStageCost(np.dot(M,E),np.dot(M,F))
+
+    def add2Norm3DStageCost(self,E,F,Naz=11,Nel=7):
+        # adds sum_k ||Ex(k)+Fu(k)||_2 to cost
+        # where E and F must both have THREE rows
+        # approximated by 2*Naz*Nel linear constraints
+        M = pointsOnHemisphere(Nel,Naz)
         self.addInfNormStageCost(np.dot(M,E),np.dot(M,F))
 
     def plotStateHistory(self):
@@ -396,11 +422,67 @@ class LTraj2DAvoid(LTrajAvoid):
         for this_box in self.boxes:
             plt.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],[this_box[2],this_box[3],this_box[3],this_box[2],this_box[2]],'r')
 
-    def plotTraj2D(self,ind_x=0,ind_y=1):
+    def plotTraj2D(self):
         self.plotBoxes()
-        plt.plot([x[ind_x].varValue for x in self.var_x],[x[ind_y].varValue for x in self.var_x])
+        plt.plot([x[self.ind_x].varValue for x in self.var_x],[x[self.ind_y].varValue for x in self.var_x])
         plt.show()
 
+class LTraj3DAvoid(LTrajAvoid):
+
+    def __init__(self,A,B,Nt,ind_x=0,ind_y=1,ind_z=2,name="Trajectory",sense=1):
+        LTrajAvoid.__init__(self,A,B,Nt,name,sense)
+        self.ind_x = ind_x
+        self.ind_y = ind_y
+        self.ind_z = ind_z
+        self.boxes = []
+    
+    def addStatic3DObst(self,xmin,xmax,ymin,ymax,zmin,zmax):
+        self.boxes += [(xmin,xmax,ymin,ymax,zmin,zmax)]
+        for kk in range(self.Nt):
+            rleft = [self.var_x[kk][self.ind_x]-xmin, self.var_x[kk+1][self.ind_x]-xmin]
+            rright = [xmax-self.var_x[kk][self.ind_x], xmax-self.var_x[kk+1][self.ind_x]]
+            rback = [self.var_x[kk][self.ind_y]-ymin, self.var_x[kk+1][self.ind_y]-ymin]
+            rfront = [ymax-self.var_x[kk][self.ind_y], ymax-self.var_x[kk+1][self.ind_y]]
+            rbelow = [self.var_x[kk][self.ind_z]-zmin, self.var_x[kk+1][self.ind_z]-zmin]
+            rabove = [zmax-self.var_x[kk][self.ind_z], zmax-self.var_x[kk+1][self.ind_z]]
+            self.addUnionConstraint((rleft,rright,rback,rfront,rabove,rbelow),seq=(kk*(self.Nt-kk)))
+
+    def plotBoxes(self,ax):
+        for this_box in self.boxes:
+            ax.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],
+                    [this_box[2],this_box[3],this_box[3],this_box[2],this_box[2]],
+                    [this_box[4],this_box[4],this_box[4],this_box[4],this_box[4]],
+                    'r')
+            ax.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],
+                    [this_box[2],this_box[3],this_box[3],this_box[2],this_box[2]],
+                    [this_box[5],this_box[5],this_box[5],this_box[5],this_box[5]],
+                    'r')
+            ax.plot([this_box[0],this_box[0]],
+                    [this_box[2],this_box[2]],
+                    [this_box[4],this_box[5]],
+                    'r')
+            ax.plot([this_box[1],this_box[1]],
+                    [this_box[2],this_box[2]],
+                    [this_box[4],this_box[5]],
+                    'r')
+            ax.plot([this_box[0],this_box[0]],
+                    [this_box[3],this_box[3]],
+                    [this_box[4],this_box[5]],
+                    'r')
+            ax.plot([this_box[1],this_box[1]],
+                    [this_box[3],this_box[3]],
+                    [this_box[4],this_box[5]],
+                    'r')
+
+    def plotTraj3D(self):
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+        self.plotBoxes(ax)
+        ax.plot([x[self.ind_x].varValue for x in self.var_x],
+                 [x[self.ind_y].varValue for x in self.var_x],
+                 [x[self.ind_z].varValue for x in self.var_x])
+        plt.show()
+        
 def lavTest():
     A = np.eye(2)
     B = np.eye(2)
@@ -462,5 +544,34 @@ def randomTest(num_boxes=3,method='MILP',**kwargs):
     elif method=='BNB':
         lt.solveByBranchBound(**kwargs)
         lt.plotTraj2D()
+    return lt
+
+def randomTest3D(num_boxes=3,method='MILP',**kwargs):
+    A = np.eye(3)
+    B = np.eye(3)
+    lt = LTraj3DAvoid(A,B,5)
+    lt.setInitialState([0.0,0.0,0.0])
+    lt.setTerminalState([10.0,10.0,10.0])
+    lt.add2Norm3DStageCost(np.zeros((3,3)),np.eye(3))
+    box_ctrs = np.random.uniform(low=2.0,high=8.0,size=(num_boxes,3))
+    box_sizes = np.random.uniform(low=0.1,high=0.75,size=(num_boxes,3))
+    for bb in range(num_boxes):
+        this_box = (box_ctrs[bb,0]-box_sizes[bb,0],
+            box_ctrs[bb,0]+box_sizes[bb,0],
+            box_ctrs[bb,1]-box_sizes[bb,1],
+            box_ctrs[bb,1]+box_sizes[bb,1],
+            box_ctrs[bb,2]-box_sizes[bb,2],
+            box_ctrs[bb,2]+box_sizes[bb,2])
+        assert this_box[1]>this_box[0]
+        assert this_box[3]>this_box[2]
+        assert this_box[5]>this_box[4]
+        lt.addStatic3DObst(this_box[0],this_box[1],this_box[2],this_box[3],this_box[4],this_box[5])        
+    # solve it
+    if method=='MILP':
+        lt.solveByMILP(**kwargs)
+        lt.plotTraj3D()
+    elif method=='BNB':
+        lt.solveByBranchBound(**kwargs)
+        lt.plotTraj3D()
     return lt
 
