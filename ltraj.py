@@ -93,6 +93,9 @@ class LTraj(LpProbVectors):
         self.A = np.array(A)
         self.B = np.array(B)
         self.Nt = Nt
+        # empty start and finish states for now
+        self.init_x = None
+        self.term_x = None
         # store sizes
         self.num_states = self.A.shape[0]
         self.num_inputs = self.B.shape[1]
@@ -113,17 +116,21 @@ class LTraj(LpProbVectors):
 
     def setInitialState(self,x0):
         self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0),name='xinit')
+        self.init_x = x0
 
     def changeInitState(self,x0):
         assert len(x0)==self.num_states
+        self.init_x = x0
         for ii in range(self.num_states):
             self.constraints[("xinit_%i" % ii)].changeRHS(x0[ii])
 
     def setTerminalState(self,xN):
         self.addVecEqualZeroConstraint(self.var_x[self.Nt]-np.array(xN),name='xterm')
+        self.term_x = xN
 
     def changeTermState(self,xN):
         assert len(xN)==self.num_states
+        self.term_x = xN
         for ii in range(self.num_states):
             self.constraints[("xterm_%i" % ii)].changeRHS(xN[ii])
 
@@ -274,7 +281,7 @@ class LpProbUnionCons(LpProbVectors):
         elif self.verbosity>=1:
             print "%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg)
 
-    def solveByBranchBound(self,Nmaxnodes=1000,Nmaxiters=5000,strategy='depth',verbosity=1,**kwargs):
+    def solveByBranchBound(self,Nmaxnodes=1000,Nmaxiters=5000,strategy='least_infeas',verbosity=1,**kwargs):
         start_time = time.clock()
         # no lower bound yet
         self.lower_bound = -np.inf
@@ -369,32 +376,6 @@ class LpProbUnionCons(LpProbVectors):
         self.solve(**kwargs)
         self.solve_time = time.clock() - start_time
 
-def unionTest():
-    lt = LpProbUnionCons()
-    x = pulp.LpVariable("x")
-    y = pulp.LpVariable("y")
-    lt += -x+y
-    r1=[x+1,-2-x,y-2,1-y]
-    r2=[x+3,-4-x,y-2,1-y]
-    lt.addUnionConstraint((r1,r2))
-    lt.solveByMILP()
-    return lt
-
-def ltrajTest2():
-    A = np.eye(2)
-    B = np.eye(2)
-    lt = LTraj(A,B,5)
-    lt.setInitialState([2.0,3.0])
-    lt.setTerminalState([4.0,4.0])
-    #lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
-    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
-    lt.addConstraint(lt.var_x[2][0]>=5.5)
-    #lt.addInfNormStageCost(np.eye(2),np.zeros((2,2)))
-    lt.solve()
-    lt.plotStateHistory()
-    lt.plotTraj2D()
-    return lt
-
 class LTrajAvoid(LTraj,LpProbUnionCons):
 
     def __init__(self,A,B,Nt,name="Trajectory",sense=1):
@@ -447,6 +428,21 @@ class LTraj3DAvoid(LTrajAvoid):
             rabove = [zmax-self.var_x[kk][self.ind_z], zmax-self.var_x[kk+1][self.ind_z]]
             self.addUnionConstraint((rleft,rright,rback,rfront,rabove,rbelow),seq=(kk*(self.Nt-kk)))
 
+    def addRandomBoxes(self,num_boxes,ctr_range,size_range):
+        box_ctrs = np.random.uniform(low=ctr_range[0],high=ctr_range[1],size=(num_boxes,3))
+        box_sizes = np.random.uniform(low=size_range[0],high=size_range[1],size=(num_boxes,3))
+        for bb in range(num_boxes):
+            this_box = (box_ctrs[bb,0]-box_sizes[bb,0],
+                        box_ctrs[bb,0]+box_sizes[bb,0],
+                        box_ctrs[bb,1]-box_sizes[bb,1],
+                        box_ctrs[bb,1]+box_sizes[bb,1],
+                        box_ctrs[bb,2]-box_sizes[bb,2],
+                        box_ctrs[bb,2]+box_sizes[bb,2])
+            assert this_box[1]>this_box[0]
+            assert this_box[3]>this_box[2]
+            assert this_box[5]>this_box[4]
+            self.addStatic3DObst(this_box[0],this_box[1],this_box[2],this_box[3],this_box[4],this_box[5])
+
     def plotBoxes(self,ax):
         for this_box in self.boxes:
             ax.plot([this_box[0],this_box[0],this_box[1],this_box[1],this_box[0]],
@@ -481,7 +477,49 @@ class LTraj3DAvoid(LTrajAvoid):
         ax.plot([x[self.ind_x].varValue for x in self.var_x],
                  [x[self.ind_y].varValue for x in self.var_x],
                  [x[self.ind_z].varValue for x in self.var_x])
+        if self.term_x:
+            ax.plot([self.term_x[self.ind_x]],
+                    [self.term_x[self.ind_y]],
+                    [self.term_x[self.ind_z]], 'g*')
+        if self.init_x:
+            ax.plot([self.init_x[self.ind_x]],
+                    [self.init_x[self.ind_y]],
+                    [self.init_x[self.ind_z]], 'gs')
         plt.show()
+
+class LTr3DShortest(LTraj3DAvoid):
+
+    def __init__(self,Nt,name="Trajectory"):
+        A = np.eye(3)
+        B = np.eye(3)
+        LTraj3DAvoid.__init__(self,A,B,Nt,name=name,sense=1)
+        self.add2Norm3DStageCost(np.zeros((3,3)),np.eye(3))                
+
+def unionTest():
+    lt = LpProbUnionCons()
+    x = pulp.LpVariable("x")
+    y = pulp.LpVariable("y")
+    lt += -x+y
+    r1=[x+1,-2-x,y-2,1-y]
+    r2=[x+3,-4-x,y-2,1-y]
+    lt.addUnionConstraint((r1,r2))
+    lt.solveByMILP()
+    return lt
+
+def ltrajTest2():
+    A = np.eye(2)
+    B = np.eye(2)
+    lt = LTraj(A,B,5)
+    lt.setInitialState([2.0,3.0])
+    lt.setTerminalState([4.0,4.0])
+    #lt.addInfNormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.add2NormStageCost(np.zeros((2,2)),np.eye(2))
+    lt.addConstraint(lt.var_x[2][0]>=5.5)
+    #lt.addInfNormStageCost(np.eye(2),np.zeros((2,2)))
+    lt.solve()
+    lt.plotStateHistory()
+    lt.plotTraj2D()
+    return lt
         
 def lavTest():
     A = np.eye(2)
@@ -575,3 +613,16 @@ def randomTest3D(num_boxes=3,method='MILP',**kwargs):
         lt.plotTraj3D()
     return lt
 
+def random3DShortest(Nt=5,num_boxes=10,ctr_range=(2.0,8.0),size_range=(0.1,3.0),method='MILP',**kwargs):
+    lt = LTr3DShortest(Nt=5)
+    lt.setInitialState([0.0,0.0,0.0])
+    lt.setTerminalState([10.0,10.0,10.0])
+    lt.addRandomBoxes(num_boxes,ctr_range,size_range)
+    # solve it
+    if method=='MILP':
+        lt.solveByMILP(**kwargs)
+        lt.plotTraj3D()
+    elif method=='BNB':
+        lt.solveByBranchBound(**kwargs)
+        lt.plotTraj3D()
+    return lt
