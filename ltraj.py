@@ -626,3 +626,6 @@ def random3DShortest(Nt=5,num_boxes=10,ctr_range=(2.0,8.0),size_range=(0.1,3.0),
         lt.solveByBranchBound(**kwargs)
         lt.plotTraj3D()
     return lt
+
+if __name__=="__main__":
+    lt = random3DShortest(num_boxes=3)
