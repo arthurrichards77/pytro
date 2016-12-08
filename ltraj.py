@@ -88,31 +88,33 @@ class LpProbVectors(pulp.LpProblem):
 
 class LTraj(LpProbVectors):
 
-    def __init__(self,A,B,Nt,name="NoName",sense=1):
-        # store dynamics and horizon
-        self.A = np.array(A)
-        self.B = np.array(B)
-        self.Nt = Nt
-        # empty start and finish states for now
-        self.init_x = None
-        self.term_x = None
-        # store sizes
-        self.num_states = self.A.shape[0]
-        self.num_inputs = self.B.shape[1]
-        # check size compatibility
-        assert self.A.shape[1]==self.A.shape[0], "A must be square"
-        assert self.B.shape[0]==self.A.shape[0], "B must have same row count as A"
+    def __init__(self,A,B,Nt,name="NoName",sense=1,num_agents=1):
         # initialize parent Pulp class
         LpProbVectors.__init__(self, name, sense)
         # begin with no objective at all
         self+=0.0
-	# set up state and input variables
-        self.var_x = [self.newVarVector("x(0)",self.num_states)]
-        self.var_u = []
-        for kk in range(self.Nt):
-            self.var_x.append(self.newVarVector("x(%i)" % (kk+1),self.num_states))
-            self.var_u.append(self.newVarVector("u(%i)" % kk,self.num_inputs))
-            self.addVecEqualZeroConstraint(np.dot(self.A,self.var_x[kk])+np.dot(self.B,self.var_u[kk]) - self.var_x[kk+1])
+       	# check size compatibility
+       	assert A.shape[1]==A.shape[0], "A must be square"
+       	assert B.shape[0]==A.shape[0], "B must have same row count as A"
+	# store horizon
+        self.Nt = Nt
+	self.num_agents = num_agents       
+	self.num_states = num_agents*A.shape[0]
+	self.var_x = [[] for kk in range(self.Nt+1)]
+	self.var_u = [[] for kk in range(self.Nt+1)]   
+	self.avar_x = []
+        self.avar_u = []
+        for aa in range(num_agents):
+		# set up state and input variables
+        	self.avar_x.append([self.newVarVector("x%i(0)" % (aa+1),A.shape[0])])
+		self.var_x[0].extend(self.avar_x[aa][0])
+        	self.avar_u.append([])
+		for kk in range(self.Nt):
+            		self.avar_x[aa].append(self.newVarVector("x%i(%i)" % (aa+1,kk+1),A.shape[0]))
+            		self.avar_u[aa].append(self.newVarVector("u%i(%i)" % (aa+1,kk),B.shape[1]))
+            		self.addVecEqualZeroConstraint(np.dot(np.array(A),self.avar_x[aa][kk])+np.dot(np.array(B),self.avar_u[aa][kk]) - self.avar_x[aa][kk+1])
+			self.var_x[kk+1].extend(self.avar_x[aa][kk+1])
+        	
 
     def setInitialState(self,x0):
         self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0),name='xinit')
@@ -148,8 +150,6 @@ class LTraj(LpProbVectors):
     def addStageConstraints(self, C, D, e):
         # adds Cx(k)+Du(k)<=e to constraints
         for kk in range(self.Nt):
-            print e
-            print np.dot(np.array(C), np.array(self.var_x[kk]))+np.dot(np.array(D), np.array(self.var_u[kk]))
             self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.var_x[kk])+np.dot(np.array(D), self.var_u[kk])-e)
 
     def add2NormStageCost(self,E,F,Nc=20):
@@ -170,6 +170,12 @@ class LTraj(LpProbVectors):
         for ii in range(self.num_states):
             plt.plot([x[ii].varValue for x in self.var_x])
         plt.show()
+
+def mutliTest3(num_agents):
+    A = np.eye(2)
+    B = np.array([[1],[1]])
+    lt = LTraj(A,B,5,num_agents=num_agents)
+    return lt
 
 class LpProbUnionCons(LpProbVectors):
 
@@ -386,9 +392,9 @@ class LpProbUnionCons(LpProbVectors):
 
 class LTrajAvoid(LTraj, LpProbUnionCons):
 
-    def __init__(self, A, B, Nt, name="Trajectory", sense=1):
+    def __init__(self, A, B, Nt, name="Trajectory", sense=1, num_agents=1):
         LpProbUnionCons.__init__(self)
-        LTraj.__init__(self, A, B, Nt, name, sense)
+        LTraj.__init__(self, A, B, Nt, name, sense, num_agents)
 
 
 class LTraj2DAvoid(LTrajAvoid):
