@@ -139,11 +139,18 @@ class LTraj(LpProbVectors):
         for kk in range(self.Nt):
             newvar=self.addMaxVarConstraint(
                 np.hstack((
-                    np.dot(np.array(E),self.var_x[kk])+np.dot(np.array(F),self.var_u[kk]),
-                    np.dot(-np.array(E),self.var_x[kk])+np.dot(-np.array(F),self.var_u[kk])
+                    np.dot(np.array(E), self.var_x[kk])+np.dot(np.array(F), self.var_u[kk]),
+                    np.dot(-np.array(E), self.var_x[kk])+np.dot(-np.array(F), self.var_u[kk])
                 ))
             )
             self.objective += newvar
+
+    def addStageConstraints(self, C, D, e):
+        # adds Cx(k)+Du(k)<=e to constraints
+        for kk in range(self.Nt):
+            print e
+            print np.dot(np.array(C), np.array(self.var_x[kk]))+np.dot(np.array(D), np.array(self.var_u[kk]))
+            self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.var_x[kk])+np.dot(np.array(D), self.var_u[kk])-e)
 
     def add2NormStageCost(self,E,F,Nc=20):
         # adds sum_k ||Ex(k)+Fu(k)||_2 to cost
@@ -376,15 +383,17 @@ class LpProbUnionCons(LpProbVectors):
         self.solve(**kwargs)
         self.solve_time = time.clock() - start_time
 
-class LTrajAvoid(LTraj,LpProbUnionCons):
 
-    def __init__(self,A,B,Nt,name="Trajectory",sense=1):
+class LTrajAvoid(LTraj, LpProbUnionCons):
+
+    def __init__(self, A, B, Nt, name="Trajectory", sense=1):
         LpProbUnionCons.__init__(self)
-        LTraj.__init__(self,A,B,Nt,name,sense)
+        LTraj.__init__(self, A, B, Nt, name, sense)
+
 
 class LTraj2DAvoid(LTrajAvoid):
 
-    def __init__(self,A,B,Nt,ind_x=0,ind_y=1,name="Trajectory",sense=1):
+    def __init__(self, A, B, Nt, ind_x=0, ind_y=1, name="Trajectory", sense=1):
         LTrajAvoid.__init__(self,A,B,Nt,name,sense)
         self.ind_x = ind_x
         self.ind_y = ind_y
@@ -628,4 +637,4 @@ def random3DShortest(Nt=5,num_boxes=10,ctr_range=(2.0,8.0),size_range=(0.1,3.0),
     return lt
 
 if __name__=="__main__":
-    lt = random3DShortest(num_boxes=3)
+    random3DShortest(num_boxes=5,method='BNB')
