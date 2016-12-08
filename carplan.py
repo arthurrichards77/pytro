@@ -16,8 +16,8 @@ if __name__=="__main__":
     car_b = np.array([[0.5*dt*dt],[dt]])
     cp = CarPlan(car_a, car_b, num_steps=10, num_cars=1)
     cp.setInitialState(np.array([0,0.8]))
-    cp.objective+=1.0*cp.var_x[-1][cp.ind_pos]
-    cp.addStageConstraints(np.array([[0,0],[0,0],[0,1],[0,-1]]), np.array([[1],[-1],[0],[0]]), [1,1,1,1])
+    cp.objective+=-1.0*cp.var_x[-1][cp.ind_pos]
+    cp.addStageConstraints(np.array([[0,0],[0,0],[0,1],[0,-1]]), np.array([[1],[-1],[0],[0]]), [1,1,1,0])
     #print cp
     cp.solve()
     cp.plotStateHistory()
