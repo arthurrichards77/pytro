@@ -1,8 +1,6 @@
 import numpy as np
 import pulp
-import mpl_toolkits.mplot3d as m3d
 import matplotlib.pyplot as plt
-import copy
 import time
 
 def lpAffExpAsTuple(ee):
@@ -15,7 +13,7 @@ def lpConstraintsOppose(e1,e2):
     return lpAffExpAsTuple(e1)==oppositeLpExpAsTuple(e2)
 
 def pointsOnHemisphere(Nel,Naz):
-    M = np.transpose(np.vstack((np.cos(np.pi*np.array(range(Naz))/Naz),np.sin(np.pi*np.array(range(Naz))/Naz))))        
+    M = np.transpose(np.vstack((np.cos(np.pi*np.array(range(Naz))/Naz),np.sin(np.pi*np.array(range(Naz))/Naz))))
     el_range=np.array(range((1-Nel),Nel))*0.5*np.pi/Nel
     el_range=np.reshape(el_range,(2*Nel-1,1))
     M2 = np.kron(np.cos(el_range),M)
@@ -38,7 +36,7 @@ class LpProbVectors(pulp.LpProblem):
         pulp.LpProblem.__init__(self, name, sense)
         self.leq_list = []
         self.contradictory = False
-        
+
     def newVarVector(self,name,num_elems):
         v = []
         for ii in range(num_elems):
@@ -46,7 +44,7 @@ class LpProbVectors(pulp.LpProblem):
             v.append(newvar)
             self.addVariable(newvar)
         return v
-    
+
     def addVecEqualZeroConstraint(self,vector_expression,name=None):
         for ii,ee in enumerate(vector_expression):
             if name is not None:
@@ -68,7 +66,7 @@ class LpProbVectors(pulp.LpProblem):
                 self.contradictory = True
         # add new expression to the list
         self.leq_list += [ee]
-        
+
     def addVecLessEqZeroConstraint(self,vector_expression):
         for ee in vector_expression:
             self.addLeqZeroConstraint(ee)
@@ -93,32 +91,34 @@ class LTraj(LpProbVectors):
         LpProbVectors.__init__(self, name, sense)
         # begin with no objective at all
         self+=0.0
-       	# check size compatibility
-       	assert A.shape[1]==A.shape[0], "A must be square"
-       	assert B.shape[0]==A.shape[0], "B must have same row count as A"
-	# store horizon
+        # check size compatibility
+        assert A.shape[1]==A.shape[0], "A must be square"
+        assert B.shape[0]==A.shape[0], "B must have same row count as A"
+        # store horizon
         self.Nt = Nt
-	self.num_agents = num_agents       
-	self.num_states = num_agents*A.shape[0]
-	self.var_x = [[] for kk in range(self.Nt+1)]
-	self.var_u = [[] for kk in range(self.Nt+1)]   
-	self.avar_x = []
+        self.num_agents = num_agents
+        self.num_states = num_agents*A.shape[0]
+        self.var_x = [[] for kk in range(self.Nt+1)]
+        self.var_u = [[] for kk in range(self.Nt+1)]
+        self.avar_x = []
         self.avar_u = []
         for aa in range(num_agents):
-		# set up state and input variables
-        	self.avar_x.append([self.newVarVector("x%i(0)" % (aa+1),A.shape[0])])
-		self.var_x[0].extend(self.avar_x[aa][0])
-        	self.avar_u.append([])
-		for kk in range(self.Nt):
-            		self.avar_x[aa].append(self.newVarVector("x%i(%i)" % (aa+1,kk+1),A.shape[0]))
-            		self.avar_u[aa].append(self.newVarVector("u%i(%i)" % (aa+1,kk),B.shape[1]))
-            		self.addVecEqualZeroConstraint(np.dot(np.array(A),self.avar_x[aa][kk])+np.dot(np.array(B),self.avar_u[aa][kk]) - self.avar_x[aa][kk+1])
-			self.var_x[kk+1].extend(self.avar_x[aa][kk+1])
-        	
+            # set up state and input variables
+            self.avar_x.append([self.newVarVector("x%i(0)" % (aa+1),A.shape[0])])
+            self.var_x[0].extend(self.avar_x[aa][0])
+            self.avar_u.append([])
+            for kk in range(self.Nt):
+                self.avar_x[aa].append(self.newVarVector("x%i(%i)" % (aa+1,kk+1),A.shape[0]))
+                self.avar_u[aa].append(self.newVarVector("u%i(%i)" % (aa+1,kk),B.shape[1]))
+                self.addVecEqualZeroConstraint(np.dot(np.array(A),self.avar_x[aa][kk])+np.dot(np.array(B),self.avar_u[aa][kk]) - self.avar_x[aa][kk+1])
+                self.var_x[kk+1].extend(self.avar_x[aa][kk+1])
+                self.var_u[kk].extend(self.avar_u[aa][kk])
+
 
     def setInitialState(self,x0):
         self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0),name='xinit')
         self.init_x = x0
+
 
     def changeInitState(self,x0):
         assert len(x0)==self.num_states
@@ -147,10 +147,17 @@ class LTraj(LpProbVectors):
             )
             self.objective += newvar
 
-    def addStageConstraints(self, C, D, e):
+    def addStageConstraints(self, C, D, e, agent='aug'):
         # adds Cx(k)+Du(k)<=e to constraints
         for kk in range(self.Nt):
-            self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.var_x[kk])+np.dot(np.array(D), self.var_u[kk])-e)
+            if agent=='aug':
+                self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.var_x[kk])+np.dot(np.array(D), self.var_u[kk])-e)
+            elif agent in range(self.num_agents):
+                self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.avar_x[agent][kk]) + np.dot(np.array(D), self.avar_u[agent][kk]) - e)
+            elif agent=='all':
+                for aa in range(self.num_agents):
+                    self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.avar_x[aa][kk]) + np.dot(np.array(D), self.avar_u[aa][kk]) - e)
+
 
     def add2NormStageCost(self,E,F,Nc=20):
         # adds sum_k ||Ex(k)+Fu(k)||_2 to cost
@@ -169,6 +176,7 @@ class LTraj(LpProbVectors):
     def plotStateHistory(self):
         for ii in range(self.num_states):
             plt.plot([x[ii].varValue for x in self.var_x])
+        plt.grid()
         plt.show()
 
 def mutliTest3(num_agents):
@@ -176,6 +184,7 @@ def mutliTest3(num_agents):
     B = np.array([[1],[1]])
     lt = LTraj(A,B,5,num_agents=num_agents)
     return lt
+
 
 class LpProbUnionCons(LpProbVectors):
 
@@ -309,16 +318,16 @@ class LpProbUnionCons(LpProbVectors):
         # store verbosity setting
         self.verbosity = verbosity
         # loop
-        for nn in range(Nmaxiters):                                
+        for nn in range(Nmaxiters):
             if len(self.node_list)==0:
                 # finished - no more nodes
                 self.status=1
-                self._status_msg("OPTIMAL no more nodes")                
+                self._status_msg("OPTIMAL no more nodes")
                 break
             if self.lp_count==Nmaxnodes:
                 # finished - no more nodes
                 self.status=0
-                self._status_msg("Node LP count limit reached")                
+                self._status_msg("Node LP count limit reached")
                 break
             this_node = self._getNextNode(strategy)
             if this_node.lower_bound >= self.incumbent_cost:
@@ -347,10 +356,10 @@ class LpProbUnionCons(LpProbVectors):
                 self.incumbent_cost = this_node.objective.value()
                 self.incumbent_node = this_node
                 self.incumbent_sol = [vv.varValue for vv in this_node.variables()]
-                self._status_msg("New incumbent %f" % (this_node.objective.value()))                
+                self._status_msg("New incumbent %f" % (this_node.objective.value()))
             else:
                 self._branch(this_node)
-                self._status_msg("Branched with bound=%f" % (this_node.objective.value()))                
+                self._status_msg("Branched with bound=%f" % (this_node.objective.value()))
         else:
             self.status=0
             self._status_msg("Iteration limit reached")
@@ -358,8 +367,8 @@ class LpProbUnionCons(LpProbVectors):
         if self.incumbent_cost<np.inf:
             # copy result back to parent
             for ii in range(len(self.variables())):
-                self.variables()[ii].varValue = self.incumbent_sol[ii]                
-        # stop the clock
+                self.variables()[ii].varValue = self.incumbent_sol[ii]
+                # stop the clock
         self.solve_time = time.clock() - start_time
 
     def _convertUnionToMILP(self,uc,M):
@@ -404,7 +413,7 @@ class LTraj2DAvoid(LTrajAvoid):
         self.ind_x = ind_x
         self.ind_y = ind_y
         self.boxes = []
-    
+
     def addStatic2DObst(self,xmin,xmax,ymin,ymax):
         self.boxes += [(xmin,xmax,ymin,ymax)]
         for kk in range(self.Nt):
@@ -431,7 +440,7 @@ class LTraj3DAvoid(LTrajAvoid):
         self.ind_y = ind_y
         self.ind_z = ind_z
         self.boxes = []
-    
+
     def addStatic3DObst(self,xmin,xmax,ymin,ymax,zmin,zmax):
         self.boxes += [(xmin,xmax,ymin,ymax,zmin,zmax)]
         for kk in range(self.Nt):
@@ -490,8 +499,8 @@ class LTraj3DAvoid(LTrajAvoid):
         ax = fig.gca(projection='3d')
         self.plotBoxes(ax)
         ax.plot([x[self.ind_x].varValue for x in self.var_x],
-                 [x[self.ind_y].varValue for x in self.var_x],
-                 [x[self.ind_z].varValue for x in self.var_x])
+                [x[self.ind_y].varValue for x in self.var_x],
+                [x[self.ind_z].varValue for x in self.var_x])
         if self.term_x:
             ax.plot([self.term_x[self.ind_x]],
                     [self.term_x[self.ind_y]],
@@ -508,7 +517,7 @@ class LTr3DShortest(LTraj3DAvoid):
         A = np.eye(3)
         B = np.eye(3)
         LTraj3DAvoid.__init__(self,A,B,Nt,name=name,sense=1)
-        self.add2Norm3DStageCost(np.zeros((3,3)),np.eye(3))                
+        self.add2Norm3DStageCost(np.zeros((3,3)),np.eye(3))
 
 def unionTest():
     lt = LpProbUnionCons()
@@ -535,7 +544,7 @@ def ltrajTest2():
     lt.plotStateHistory()
     lt.plotTraj2D()
     return lt
-        
+
 def lavTest():
     A = np.eye(2)
     B = np.eye(2)
@@ -584,13 +593,13 @@ def randomTest(num_boxes=3,method='MILP',**kwargs):
     plt.cla()
     for bb in range(num_boxes):
         this_box = (box_ctrs[bb,0]-box_sizes[bb,0],
-            box_ctrs[bb,0]+box_sizes[bb,0],
-            box_ctrs[bb,1]-box_sizes[bb,1],
-            box_ctrs[bb,1]+box_sizes[bb,1])
+                    box_ctrs[bb,0]+box_sizes[bb,0],
+                    box_ctrs[bb,1]-box_sizes[bb,1],
+                    box_ctrs[bb,1]+box_sizes[bb,1])
         assert this_box[1]>this_box[0]
         assert this_box[3]>this_box[2]
-        lt.addStatic2DObst(this_box[0],this_box[1],this_box[2],this_box[3])        
-    # solve it
+        lt.addStatic2DObst(this_box[0],this_box[1],this_box[2],this_box[3])
+        # solve it
     if method=='MILP':
         lt.solveByMILP(**kwargs)
         lt.plotTraj2D()
@@ -610,16 +619,16 @@ def randomTest3D(num_boxes=3,method='MILP',**kwargs):
     box_sizes = np.random.uniform(low=0.1,high=0.75,size=(num_boxes,3))
     for bb in range(num_boxes):
         this_box = (box_ctrs[bb,0]-box_sizes[bb,0],
-            box_ctrs[bb,0]+box_sizes[bb,0],
-            box_ctrs[bb,1]-box_sizes[bb,1],
-            box_ctrs[bb,1]+box_sizes[bb,1],
-            box_ctrs[bb,2]-box_sizes[bb,2],
-            box_ctrs[bb,2]+box_sizes[bb,2])
+                    box_ctrs[bb,0]+box_sizes[bb,0],
+                    box_ctrs[bb,1]-box_sizes[bb,1],
+                    box_ctrs[bb,1]+box_sizes[bb,1],
+                    box_ctrs[bb,2]-box_sizes[bb,2],
+                    box_ctrs[bb,2]+box_sizes[bb,2])
         assert this_box[1]>this_box[0]
         assert this_box[3]>this_box[2]
         assert this_box[5]>this_box[4]
-        lt.addStatic3DObst(this_box[0],this_box[1],this_box[2],this_box[3],this_box[4],this_box[5])        
-    # solve it
+        lt.addStatic3DObst(this_box[0],this_box[1],this_box[2],this_box[3],this_box[4],this_box[5])
+        # solve it
     if method=='MILP':
         lt.solveByMILP(**kwargs)
         lt.plotTraj3D()
