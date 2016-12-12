@@ -98,8 +98,9 @@ class LTraj(LpProbVectors):
         self.Nt = Nt
         self.num_agents = num_agents
         self.num_states = num_agents*A.shape[0]
+        self.num_inputs = num_agents*B.shape[1]
         self.var_x = [[] for kk in range(self.Nt+1)]
-        self.var_u = [[] for kk in range(self.Nt+1)]
+        self.var_u = [[] for kk in range(self.Nt)]
         self.avar_x = []
         self.avar_u = []
         for aa in range(num_agents):
@@ -176,6 +177,17 @@ class LTraj(LpProbVectors):
     def plotStateHistory(self):
         for ii in range(self.num_states):
             plt.plot([x[ii].varValue for x in self.var_x])
+        plt.grid()
+        plt.show()
+
+    def plotStateControlHistory(self):
+        plt.subplot(2,1,1)
+        for ii in range(self.num_states):
+            plt.plot([x[ii].varValue for x in self.var_x])
+        plt.grid()
+        plt.subplot(2,1,2)
+        for ii in range(self.num_inputs):
+            plt.plot([u[ii].varValue for u in self.var_u])
         plt.grid()
         plt.show()
 

@@ -1,4 +1,5 @@
 from ltraj import LTrajAvoid
+import pulp
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -47,7 +48,7 @@ def car_test():
     car_a = np.array([[1,dt],[0,1]])
     car_b = np.array([[0.5*dt*dt],[dt]])
     cp = CarPlan(car_a, car_b, num_steps=10, num_cars=2)
-    cp.setInitialState(np.array([0,0.8,0,3]))
+    cp.setInitialState(np.array([0,0.8,0,0.3]))
     cp.objective+=-1.0*cp.avar_x[0][-1][cp.ind_pos]
     cp.objective+=-1.0*cp.avar_x[1][-1][cp.ind_pos]
     cp.addInfNormStageCost(np.zeros([1,4]),0.001*np.array([1,0]))
@@ -58,11 +59,14 @@ def car_test():
     cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
     cp.addSpeedRestriction(5.0,15,20,1)
     cp.addCrossingConstraint(0,15,25,1,10,20)
-    #print cp
     #cp.solveByBranchBound()
-    cp.solveByMILP(M=1000)
+    #cp.solveByMILP(M=1000)
+    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    #print cp    
     print cp.objective.value()
-    cp.plotStateHistory()
+    print cp.solve_time
+    cp.plotStateControlHistory()
     #cp.plotSpeedOverDistance()
     return(cp)
 
