@@ -120,7 +120,6 @@ class LTraj(LpProbVectors):
         self.addVecEqualZeroConstraint(self.var_x[0]-np.array(x0),name='xinit')
         self.init_x = x0
 
-
     def changeInitState(self,x0):
         assert len(x0)==self.num_states
         self.init_x = x0
@@ -206,18 +205,33 @@ class LpProbUnionCons(LpProbVectors):
         # and set list of union constraints to zero
         self.union_cons = []
         self.union_cons_seqs = []
+        self.union_cons_names = []
         # identify incompatible combinations early
         self.taboo_list = []
         # store solver early if given
         self.presolver = presolver
 
-    def addUnionConstraint(self,c,seq=100):
+    def addUnionConstraint(self,c,seq=100,name=None):
         # c should be a tuple of vector expressions
         # constraint x in union{c[0]<=0, c[1]<=0, ...}
         # elements do not have to be same size
         self.union_cons.append(c)
         self.union_cons_seqs.append(seq)
-        # self.updateTabooList()
+        if name is None:
+            name = ("_union%i" % (1+len(self.union_cons)))
+        self.union_cons_names.append(name)        
+
+    def delUnionConstraint(self,ii):
+        del self.union_cons[ii]
+        del self.union_cons_seqs[ii]
+        del self.union_cons_names[ii]
+
+    def delUnionConByName(self,name):
+        try:
+            ii = self.union_cons_names.index(name)
+            self.delUnionConstraint(ii)
+        except ValueError:
+            print "Can't find union constraint with that name."
 
     def _getNextNode(self,strategy='depth'):
         if strategy=='depth':
@@ -307,6 +321,8 @@ class LpProbUnionCons(LpProbVectors):
         self.union_cons = [self.union_cons[i] for (seq,i) in decorated]
         # and sort the sequence list to avoid silliness
         self.union_cons_seqs = [seq for (seq,i) in decorated]
+        # and the name list
+        self.union_cons_names = [self.union_cons_names[i] for (seq,i) in decorated]
 
     def _status_msg(self,msg):
         if self.verbosity>=10:
@@ -428,12 +444,13 @@ class LTraj2DAvoid(LTrajAvoid):
 
     def addStatic2DObst(self,xmin,xmax,ymin,ymax):
         self.boxes += [(xmin,xmax,ymin,ymax)]
+        box_name = "box%i" % (len(self.boxes))
         for kk in range(self.Nt):
             rleft = [self.var_x[kk][self.ind_x]-xmin, self.var_x[kk+1][self.ind_x]-xmin]
             rright = [xmax-self.var_x[kk][self.ind_x], xmax-self.var_x[kk+1][self.ind_x]]
             rbelow = [self.var_x[kk][self.ind_y]-ymin, self.var_x[kk+1][self.ind_y]-ymin]
             rabove = [ymax-self.var_x[kk][self.ind_y], ymax-self.var_x[kk+1][self.ind_y]]
-            self.addUnionConstraint((rleft,rright,rabove,rbelow),seq=kk)
+            self.addUnionConstraint((rleft,rright,rabove,rbelow),seq=kk,name="%s_%i" % (box_name,kk))
 
     def plotBoxes(self):
         for this_box in self.boxes:
