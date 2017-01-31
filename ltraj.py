@@ -228,10 +228,11 @@ class LpProbUnionCons(LpProbVectors):
 
     def delUnionConByName(self,name):
         try:
+            print "Deleting union constraint %s." % name
             ii = self.union_cons_names.index(name)
             self.delUnionConstraint(ii)
         except ValueError:
-            print "Can't find union constraint with that name."
+            print "Can't find union constraint with name %s." % name
 
     def _getNextNode(self,strategy='depth'):
         if strategy=='depth':
@@ -441,16 +442,44 @@ class LTraj2DAvoid(LTrajAvoid):
         self.ind_x = ind_x
         self.ind_y = ind_y
         self.boxes = []
+        self.box_names = []
 
     def addStatic2DObst(self,xmin,xmax,ymin,ymax):
         self.boxes += [(xmin,xmax,ymin,ymax)]
         box_name = "box%i" % (len(self.boxes))
+	self.box_names += [box_name]
         for kk in range(self.Nt):
             rleft = [self.var_x[kk][self.ind_x]-xmin, self.var_x[kk+1][self.ind_x]-xmin]
             rright = [xmax-self.var_x[kk][self.ind_x], xmax-self.var_x[kk+1][self.ind_x]]
             rbelow = [self.var_x[kk][self.ind_y]-ymin, self.var_x[kk+1][self.ind_y]-ymin]
             rabove = [ymax-self.var_x[kk][self.ind_y], ymax-self.var_x[kk+1][self.ind_y]]
             self.addUnionConstraint((rleft,rright,rabove,rbelow),seq=kk,name="%s_%i" % (box_name,kk))
+
+    def deleteObstByIndex(self,box_index):
+        if box_index<len(self.boxes):
+            del self.boxes[box_index]
+            box_name = self.box_names[box_index]
+            del self.box_names[box_index]
+            for kk in range(self.Nt):
+                con_name="%s_%i" % (box_name,kk)
+                self.delUnionConByName(name=con_name)
+
+    def deleteObstByPoint(self,point):
+        box_index = -1
+        print "deleting box containing (%f,%f)" % (point[0],point[1])
+        for ii in range(len(self.boxes)):
+            this_box = self.boxes[ii]
+            print this_box
+            if point[0]>this_box[0] and point[0]<this_box[1]:
+                print "OK X"
+                if point[1]>this_box[2] and point[1]<this_box[3]:
+                    print "OK Y"
+                    print "Deleting box %i" % ii
+                    self.deleteObstByIndex(ii)
+                    box_index = ii
+                    # only delete the first one
+                    break
+        return box_index
 
     def plotBoxes(self):
         for this_box in self.boxes:
