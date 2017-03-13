@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 class CarPlan(LTrajAvoid):
 
-    def __init__(self, car_a, car_b, num_steps, num_cars, ind_pos=0, ind_spd=1, min_spd=0.0, max_spd=8.94, name="CarPlan", sense=1):
+    def __init__(self, car_a, car_b, num_steps, num_cars=1, ind_pos=0, ind_spd=1, min_spd=0.0, max_spd=8.94, name="CarPlan", sense=1):
         self.ind_pos = ind_pos
         self.ind_spd = ind_spd
         LTrajAvoid.__init__(self, car_a, car_b, num_steps, name, sense, num_agents=num_cars)
@@ -16,7 +16,7 @@ class CarPlan(LTrajAvoid):
                 self.avar_x[cc][kk][ind_spd].lowBound = min_spd
                 self.avar_x[cc][kk][ind_spd].upBound = max_spd
 
-    def addSpeedRestriction(self, spd, pos_start, pos_finish, car):
+    def addSpeedRestriction(self, spd, pos_start, pos_finish, car=0):
         for kk in range(self.Nt):
             self.addUnionConstraint(([self.avar_x[car][kk][self.ind_pos] - pos_start,
                                       self.avar_x[car][kk+1][self.ind_pos] - pos_start],
