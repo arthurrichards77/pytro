@@ -210,6 +210,8 @@ class LpProbUnionCons(LpProbVectors):
         self.taboo_list = []
         # store solver early if given
         self.presolver = presolver
+        # flag if converted to MILP already
+        self.has_been_MILPed = False
 
     def addUnionConstraint(self,c,seq=100,name=None):
         # c should be a tuple of vector expressions
@@ -420,10 +422,12 @@ class LpProbUnionCons(LpProbVectors):
     def _convertToMILP(self,M=100):
         for uc in self.union_cons:
             self._convertUnionToMILP(uc,M)
+        self.has_been_MILPed = True
 
     def solveByMILP(self,M=100,**kwargs):
+        if not self.has_been_MILPed:
+          self._convertToMILP(M)
         start_time = time.clock()
-        self._convertToMILP(M)
         self.solve(**kwargs)
         self.solve_time = time.clock() - start_time
 
