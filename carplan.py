@@ -36,6 +36,24 @@ class CarPlan(LTrajAvoid):
                                      [end_pos_2 - self.avar_x[car_2][kk][self.ind_pos],
                                       end_pos_2 - self.avar_x[car_2][kk + 1][self.ind_pos]]))
 
+    def addConflictConstraint(self,car_1,car_2,conflict_obst):
+        """Avoid collison between car 1 and car 2, which may be on different routes.  Conflict obstacle is given as (d1lo,d1hi,d2lo,d2hi,D12lo,D12hi) where 
+        collision is avoided if any **one** of following is satisfied: d1<d1lo, d1>d1hi, d2<d2lo, d2>d2hi, d2-d1<D12lo, d2-d1>D12hi ."""
+        d1lo,d1hi,d2lo,d2hi,D12lo,D12hi = conflict_obst
+        for kk in range(self.Nt):
+            self.addUnionConstraint(([self.avar_x[car_1][kk][self.ind_pos] - d1lo,
+                                      self.avar_x[car_1][kk+1][self.ind_pos] - d1lo],
+                                     [d1hi - self.avar_x[car_1][kk][self.ind_pos],
+                                      d1hi - self.avar_x[car_1][kk+1][self.ind_pos]],
+                                     [self.avar_x[car_2][kk][self.ind_pos] - d2lo,
+                                      self.avar_x[car_2][kk + 1][self.ind_pos] - d2lo],
+                                     [d2hi - self.avar_x[car_2][kk][self.ind_pos],
+                                      d2hi - self.avar_x[car_2][kk+1][self.ind_pos]],
+                                     [self.avar_x[car_2][kk][self.ind_pos] - self.avar_x[car_1][kk][self.ind_pos] - D12lo,
+                                      self.avar_x[car_2][kk+1][self.ind_pos] - self.avar_x[car_1][kk+1][self.ind_pos] - D12lo],
+                                     [D12hi - self.avar_x[car_2][kk][self.ind_pos] + self.avar_x[car_1][kk][self.ind_pos],
+                                      D12hi - self.avar_x[car_2][kk+1][self.ind_pos] + self.avar_x[car_1][kk+1][self.ind_pos]]))
+
     def plotSpeedOverDistance(self):
         for cc in range(self.num_agents):
             plt.plot([x[self.ind_pos].varValue for x in self.avar_x[cc]],
