@@ -127,7 +127,7 @@ def car_conf_test():
     dt = 0.5
     car_a,car_b = point_mass_2d_matrices(dt)
     cp = CarPlan(car_a, car_b, num_steps=10, num_cars=2)
-    cp.setInitialState(np.array([5,0.8,0,0.8]))
+    cp.setInitialState(np.array([6,0.0,0,0.0]))
     # objective weights set priorities
     cp.objective+=-1.0*cp.pos[0][-1]
     cp.objective+=-1.5*cp.pos[1][-1]
@@ -151,9 +151,81 @@ def car_conf_test():
     cp.plotStateControlHistory()    
     # plot positions against eachother
     plt.plot([x.varValue for x in cp.pos[0]], [x.varValue for x in cp.pos[1]],'x-')
-    plt.plot([15, 20, 20, 15, 15],[10, 10, 15, 15, 10],'r-')
+    plt.plot([15, 20, 20, 15, 15],[10, 10, 15, 15, 10],'r-') # for crossing test
     plt.grid()
     plt.show()
+    # done
+    return(cp)
+
+def car_follow_test():
+    # basic car dynamics
+    dt = 0.5
+    car_a,car_b = point_mass_2d_matrices(dt)
+    cp = CarPlan(car_a, car_b, num_steps=10, num_cars=2)
+    cp.setInitialState(np.array([6,0.0,0,0.0]))
+    # objective weights set priorities
+    cp.objective+=-1.0*cp.pos[0][-1]
+    cp.objective+=-0.5*cp.pos[1][-1]
+    # small weight on running progress
+    cp.objective += -0.01*sum(cp.pos[0])
+    cp.objective += -0.01*sum(cp.pos[1])
+    # and weight on acceleration
+    cp.addInfNormStageCost(np.zeros([1,2]),0.001*np.array([1]),agent='all')
+    amax = 0.5*9.81
+    cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
+    # single conflict constraint - routes overlap
+    cp.addConflictConstraint(0,1,(0,100,0,100,-4,4),gap_time=2.0)
+    # various ways to solve
+    #cp.solveByBranchBound()
+    #cp.solveByMILP(M=1000)
+    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    # show results
+    print cp.objective.value()
+    print cp.solve_time
+    cp.plotStateControlHistory()    
+    # plot positions against eachother
+    plt.plot([x.varValue for x in cp.pos[0]], [x.varValue for x in cp.pos[1]],'x-')
+    plt.plot([5, 100],[0,  95],'r-') # for following test
+    plt.plot([0,  95],[5, 100],'r-') 
+    plt.grid()
+    plt.show()
+    # done
+    return(cp)
+
+def car_merge_test():
+    # basic car dynamics
+    dt = 0.5
+    car_a,car_b = point_mass_2d_matrices(dt)
+    cp = CarPlan(car_a, car_b, num_steps=10, num_cars=2)
+    cp.setInitialState(np.array([3,0.0,0,0.0]))
+    # objective weights set priorities
+    cp.objective+=-1.0*cp.pos[0][-1]
+    cp.objective+=-1.5*cp.pos[1][-1]
+    # small weight on running progress
+    cp.objective += -0.01*sum(cp.pos[0])
+    cp.objective += -0.01*sum(cp.pos[1])
+    # and weight on acceleration
+    cp.addInfNormStageCost(np.zeros([1,2]),0.001*np.array([1]),agent='all')
+    amax = 0.5*9.81
+    cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
+    # single conflict constraint - routes overlap
+    cp.addConflictConstraint(0,1,(20,100,20,100,-4,4),gap_time=2.0)
+    # various ways to solve
+    #cp.solveByBranchBound()
+    #cp.solveByMILP(M=1000)
+    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    # show results
+    print cp.objective.value()
+    print cp.solve_time
+    cp.plotStateControlHistory()    
+    # plot positions against eachother
+    plt.plot([x.varValue for x in cp.pos[0]], [x.varValue for x in cp.pos[1]],'x-')
+    plt.plot([96, 20, 20, 24, 100],[100, 24, 20, 20, 96],'r-') 
+    plt.grid()
+    plt.show()
+    # done
     return(cp)
 
 if __name__=="__main__":
