@@ -136,16 +136,34 @@ class LTraj(LpProbVectors):
         for ii in range(self.num_states):
             self.constraints[("xterm_%i" % ii)].changeRHS(xN[ii])
 
-    def addInfNormStageCost(self,E,F):
+    def addInfNormStageCost(self,E,F, agent='aug'):
         # adds sum_k ||Ex(k)+Fu(k)||_inf to cost
         for kk in range(self.Nt):
-            newvar=self.addMaxVarConstraint(
-                np.hstack((
-                    np.dot(np.array(E), self.var_x[kk])+np.dot(np.array(F), self.var_u[kk]),
-                    np.dot(-np.array(E), self.var_x[kk])+np.dot(-np.array(F), self.var_u[kk])
-                ))
-            )
-            self.objective += newvar
+            if agent=='aug':
+                newvar=self.addMaxVarConstraint(
+                    np.hstack((
+                        np.dot(np.array(E), self.var_x[kk])+np.dot(np.array(F), self.var_u[kk]),
+                        np.dot(-np.array(E), self.var_x[kk])+np.dot(-np.array(F), self.var_u[kk])
+                    ))
+                )
+                self.objective += newvar
+            elif agent in range(self.num_agents):
+                newvar=self.addMaxVarConstraint(
+                    np.hstack((
+                        np.dot(np.array(E), self.avar_x[agent][kk])+np.dot(np.array(F), self.avar_u[agent][kk]),
+                        np.dot(-np.array(E), self.avar_x[agent][kk])+np.dot(-np.array(F), self.avar_u[agent][kk])
+                    ))
+                )
+                self.objective += newvar
+            elif agent=='all':
+                for aa in range(self.num_agents):
+                    newvar=self.addMaxVarConstraint(
+                        np.hstack((
+                            np.dot(np.array(E), self.avar_x[aa][kk])+np.dot(np.array(F), self.avar_u[aa][kk]),
+                            np.dot(-np.array(E), self.avar_x[aa][kk])+np.dot(-np.array(F), self.avar_u[aa][kk])
+                        ))
+                    )
+                    self.objective += newvar
 
     def addStageConstraints(self, C, D, e, agent='aug'):
         # adds Cx(k)+Du(k)<=e to constraints
@@ -157,7 +175,6 @@ class LTraj(LpProbVectors):
             elif agent=='all':
                 for aa in range(self.num_agents):
                     self.addVecLessEqZeroConstraint(np.dot(np.array(C), self.avar_x[aa][kk]) + np.dot(np.array(D), self.avar_u[aa][kk]) - e)
-
 
     def add2NormStageCost(self,E,F,Nc=20):
         # adds sum_k ||Ex(k)+Fu(k)||_2 to cost
@@ -182,11 +199,11 @@ class LTraj(LpProbVectors):
     def plotStateControlHistory(self):
         plt.subplot(2,1,1)
         for ii in range(self.num_states):
-            plt.plot([x[ii].varValue for x in self.var_x])
+            plt.plot([x[ii].varValue for x in self.var_x],'-x')
         plt.grid()
         plt.subplot(2,1,2)
         for ii in range(self.num_inputs):
-            plt.plot([u[ii].varValue for u in self.var_u])
+            plt.plot([u[ii].varValue for u in self.var_u],'-x')
         plt.grid()
         plt.show()
 
