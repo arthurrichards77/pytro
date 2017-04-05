@@ -61,6 +61,28 @@ class CarPlan(LTrajAvoid):
                                      [D12hi - self.pos[car_2][kk] + self.pos[car_1][kk]+self.spd[car_1][kk]*gap_time,
                                       D12hi - self.pos[car_2][kk+1] + self.pos[car_1][kk+1]+self.spd[car_1][kk+1]*gap_time]))
 
+    def addSoftConflictConstraint(self,car_1,car_2,conflict_obst,gap_time = 0.0, weight = 100.0):
+        """Avoid collison between car 1 and car 2, which may be on different routes.  Conflict obstacle is given as (d1lo,d1hi,d2lo,d2hi,D12lo,D12hi) where 
+        collision is avoided if any **one** of following is satisfied: d1<d1lo, d1>d1hi, d2<d2lo, d2>d2hi, d2-d1<D12lo, d2-d1>D12hi ."""
+        d1lo,d1hi,d2lo,d2hi,D12lo,D12hi = conflict_obst
+        next_var = self.numVariables()
+        for kk in range(self.Nt):
+            next_var += 1
+            soften_var = pulp.LpVariable(name="csft_%i" % next_var, lowBound = 0.0)
+            self.addUnionConstraint(([self.pos[car_1][kk]+self.spd[car_1][kk]*gap_time - d1lo - soften_var,
+                                      self.pos[car_1][kk+1]+self.spd[car_1][kk+1]*gap_time - d1lo - soften_var],
+                                     [d1hi - self.pos[car_1][kk] - soften_var,
+                                      d1hi - self.pos[car_1][kk+1] - soften_var],
+                                     [self.pos[car_2][kk]+self.spd[car_2][kk]*gap_time - d2lo - soften_var,
+                                      self.pos[car_2][kk+1]+self.spd[car_2][kk+1]*gap_time - d2lo - soften_var],
+                                     [d2hi - self.pos[car_2][kk] - soften_var,
+                                      d2hi - self.pos[car_2][kk+1] - soften_var],
+                                     [self.pos[car_2][kk]+self.spd[car_2][kk]*gap_time - self.pos[car_1][kk] - D12lo - soften_var,
+                                      self.pos[car_2][kk+1]+self.spd[car_2][kk+1]*gap_time - self.pos[car_1][kk+1] - D12lo - soften_var],
+                                     [D12hi - self.pos[car_2][kk] + self.pos[car_1][kk]+self.spd[car_1][kk]*gap_time - soften_var,
+                                      D12hi - self.pos[car_2][kk+1] + self.pos[car_1][kk+1]+self.spd[car_1][kk+1]*gap_time - soften_var]))
+            self.objective += weight*soften_var
+
     def plotSpeedOverDistance(self):
         for cc in range(self.num_agents):
             plt.plot([x.varValue for x in self.pos[cc]],
@@ -157,6 +179,41 @@ def car_conf_test():
     # done
     return(cp)
 
+def car_soft_conf_test():
+    # basic car dynamics
+    dt = 0.5
+    car_a,car_b = point_mass_2d_matrices(dt)
+    cp = CarPlan(car_a, car_b, num_steps=10, num_cars=2)
+    cp.setInitialState(np.array([6,0.0,0,0.0]))
+    # objective weights set priorities
+    cp.objective+=-1.0*cp.pos[0][-1]
+    cp.objective+=-1.5*cp.pos[1][-1]
+    # small weight on running progress
+    cp.objective += -0.01*sum(cp.pos[0])
+    cp.objective += -0.01*sum(cp.pos[1])
+    # and weight on acceleration
+    cp.addInfNormStageCost(np.zeros([1,2]),0.001*np.array([1]),agent='all')
+    amax = 0.5*9.81
+    cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
+    # single crossing constraint - routes cross over
+    cp.addSoftConflictConstraint(0,1,(15,20,10,15,-10,0),gap_time=2.0) # should be same as crossing test
+    # various ways to solve
+    #cp.solveByBranchBound()
+    #cp.solveByMILP(M=1000)
+    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    # show results
+    print cp.objective.value()
+    print cp.solve_time
+    cp.plotStateControlHistory()    
+    # plot positions against eachother
+    plt.plot([x.varValue for x in cp.pos[0]], [x.varValue for x in cp.pos[1]],'x-')
+    plt.plot([15, 20, 20, 15, 15],[10, 10, 15, 15, 10],'r-') # for crossing test
+    plt.grid()
+    plt.show()
+    # done
+    return(cp)
+
 def car_follow_test():
     # basic car dynamics
     dt = 0.5
@@ -174,7 +231,7 @@ def car_follow_test():
     amax = 0.5*9.81
     cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
     # single conflict constraint - routes overlap
-    cp.addConflictConstraint(0,1,(0,100,0,100,-4,4),gap_time=2.0)
+    cp.addSoftConflictConstraint(0,1,(0,100,0,100,-4,4),gap_time=2.0)
     # various ways to solve
     #cp.solveByBranchBound()
     #cp.solveByMILP(M=1000)
@@ -210,7 +267,7 @@ def car_merge_test():
     amax = 0.5*9.81
     cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
     # single conflict constraint - routes overlap
-    cp.addConflictConstraint(0,1,(20,100,20,100,-4,4),gap_time=2.0)
+    cp.addSoftConflictConstraint(0,1,(20,100,20,100,-4,4),gap_time=2.0)
     # various ways to solve
     #cp.solveByBranchBound()
     #cp.solveByMILP(M=1000)
