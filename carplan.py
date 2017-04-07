@@ -32,6 +32,21 @@ class CarPlan(LTrajAvoid):
                                      [self.spd[car][kk] - spd,
                                       self.spd[car][kk+1] - spd]))
 
+    def addSoftSpeedRestriction(self, spd, pos_start, pos_finish, car=0, weight=500.0):
+        """Limit speed to 'spd' for specified car (0 if omitted) between positions [pos_start,pos_finish].
+        Used to accommodate lateral acceleration limits while going round bends."""
+        next_var = self.numVariables()
+        for kk in range(self.Nt):
+            next_var += 1
+            soften_var = pulp.LpVariable(name="vsft_%i" % next_var, lowBound = 0.0)
+            self.addUnionConstraint(([self.pos[car][kk] - pos_start,
+                                      self.pos[car][kk+1] - pos_start],
+                                     [pos_finish - self.pos[car][kk],
+                                      pos_finish - self.pos[car][kk+1]],
+                                     [self.spd[car][kk] - spd - soften_var,
+                                      self.spd[car][kk+1] - spd - soften_var]))
+            self.objective += weight*soften_var
+
     def addCrossingConstraint(self,car_1,start_pos_1,end_pos_1,car_2,start_pos_2,end_pos_2,gap_time = 0.0):
         for kk in range(self.Nt):
             self.addUnionConstraint(([self.pos[car_1][kk]+self.spd[car_1][kk]*gap_time - start_pos_1,
@@ -105,6 +120,26 @@ def car_speed_test():
     amax = 0.5*9.81
     cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
     cp.addSpeedRestriction(5.0,15,20)
+    #cp.solveByBranchBound()
+    #cp.solveByMILP(M=1000)
+    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    print cp.objective.value()
+    print cp.solve_time
+    cp.plotStateControlHistory()
+    cp.plotSpeedOverDistance()
+    return(cp)
+
+def car_soft_speed_test():
+    dt = 0.5
+    car_a,car_b = point_mass_2d_matrices(dt)
+    cp = CarPlan(car_a, car_b, num_steps=10)
+    cp.setInitialState(np.array([16,5.8]))
+    cp.objective+=-1.0*cp.pos[0][-1]
+    cp.addInfNormStageCost(np.zeros([1,2]),0.001*np.array([1]))
+    amax = 0.5*9.81
+    cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
+    cp.addSoftSpeedRestriction(5.0,15,20)
     #cp.solveByBranchBound()
     #cp.solveByMILP(M=1000)
     #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
