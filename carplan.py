@@ -2,7 +2,6 @@ from ltraj import LTrajAvoid
 import pulp
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as ani
 
 class CarPlan(LTrajAvoid):
 
