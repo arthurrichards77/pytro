@@ -3,3 +3,4 @@
 *.mps
 gurobi.log
 .idea/*
+.spyproject/*

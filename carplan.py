@@ -121,8 +121,8 @@ def car_speed_test():
     cp.addSpeedRestriction(5.0,15,20)
     #cp.solveByBranchBound()
     #cp.solveByMILP(M=1000)
-    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
-    cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    #cp.solveByMILP(M=1000,solver=pulp.GUROBI())
     print cp.objective.value()
     print cp.solve_time
     cp.plotStateControlHistory()
@@ -213,6 +213,41 @@ def car_conf_test():
     # done
     return(cp)
 
+def car_yjunc_test():
+    # basic car dynamics
+    dt = 0.5
+    car_a,car_b = point_mass_2d_matrices(dt)
+    cp = CarPlan(car_a, car_b, num_steps=10, num_cars=2)
+    cp.setInitialState(np.array([-10,0.0,-10,0.0]))
+    # objective weights set priorities
+    cp.objective+=-1.0*cp.pos[0][-1]
+    cp.objective+=-1.5*cp.pos[1][-1]
+    # small weight on running progress
+    cp.objective += -0.01*sum(cp.pos[0])
+    cp.objective += -0.01*sum(cp.pos[1])
+    # and weight on acceleration
+    cp.addInfNormStageCost(np.zeros([1,2]),0.001*np.array([1]),agent='all')
+    amax = 0.5*9.81
+    cp.addStageConstraints(np.zeros([2, 2]), np.array([[1], [-1]]), [amax, amax], agent='all')
+    # single crossing constraint - routes cross over
+    cp.addConflictConstraint(0,1,(0,100,0,100,-5,5),gap_time=2.0)
+    # various ways to solve
+    #cp.solveByBranchBound()
+    cp.solveByMILP(M=1000)
+    #cp.solveByBranchBound(solver=pulp.GUROBI(msg=0))
+    #cp.solveByMILP(M=1000,solver=pulp.GUROBI())
+    # show results
+    print cp.objective.value()
+    print cp.solve_time
+    cp.plotStateControlHistory()    
+    # plot positions against eachother
+    plt.plot([x.varValue for x in cp.pos[0]], [x.varValue for x in cp.pos[1]],'x-')
+    plt.plot([15,0,0,5,20],[20,5,0,0,15],'r-') # for crossing test
+    plt.grid()
+    plt.show()
+    # done
+    return(cp)
+    
 def car_soft_conf_test():
     # basic car dynamics
     dt = 0.5
@@ -320,4 +355,4 @@ def car_merge_test():
     return(cp)
 
 if __name__=="__main__":
-    car_cross_test()
+    car_yjunc_test()

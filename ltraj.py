@@ -1,6 +1,7 @@
 import numpy as np
 import pulp
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import time
 
 def lpAffExpAsTuple(ee):
@@ -247,11 +248,16 @@ class LpProbUnionCons(LpProbVectors):
 
     def delUnionConByName(self,name):
         try:
-            print "Deleting union constraint %s." % name
+            print("Deleting union constraint %s." % name)
             ii = self.union_cons_names.index(name)
             self.delUnionConstraint(ii)
         except ValueError:
-            print "Can't find union constraint with name %s." % name
+            print("Can't find union constraint with name %s." % name)
+
+    def __repr__(self):
+        repr1 = LpProbVectors.__repr__(self)
+        repr2 = "\nUNIONS\n" + self.union_cons.__repr__()        
+        return(repr1+repr2)
 
     def _getNextNode(self,strategy='depth'):
         if strategy=='depth':
@@ -347,9 +353,9 @@ class LpProbUnionCons(LpProbVectors):
     def _status_msg(self,msg):
         if self.verbosity>=10:
             if np.mod(self.lp_count,self.verbosity)==0:
-                print "%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg)
+                print("%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg))
         elif self.verbosity>=1:
-            print "%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg)
+            print("%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg))
 
     def solveByBranchBound(self,Nmaxnodes=1000,Nmaxiters=5000,strategy='least_infeas',verbosity=1,**kwargs):
         start_time = time.clock()
@@ -468,7 +474,7 @@ class LTraj2DAvoid(LTrajAvoid):
     def addStatic2DObst(self,xmin,xmax,ymin,ymax):
         self.boxes += [(xmin,xmax,ymin,ymax)]
         box_name = "box%i" % (len(self.boxes))
-	self.box_names += [box_name]
+        self.box_names += [box_name]
         for kk in range(self.Nt):
             rleft = [self.var_x[kk][self.ind_x]-xmin, self.var_x[kk+1][self.ind_x]-xmin]
             rright = [xmax-self.var_x[kk][self.ind_x], xmax-self.var_x[kk+1][self.ind_x]]
@@ -487,15 +493,15 @@ class LTraj2DAvoid(LTrajAvoid):
 
     def deleteObstByPoint(self,point):
         box_index = -1
-        print "deleting box containing (%f,%f)" % (point[0],point[1])
+        print("deleting box containing (%f,%f)" % (point[0],point[1]))
         for ii in range(len(self.boxes)):
             this_box = self.boxes[ii]
-            print this_box
+            print(this_box)
             if point[0]>this_box[0] and point[0]<this_box[1]:
-                print "OK X"
+                print("OK X")
                 if point[1]>this_box[2] and point[1]<this_box[3]:
-                    print "OK Y"
-                    print "Deleting box %i" % ii
+                    print("OK Y")
+                    print("Deleting box %i" % ii)
                     self.deleteObstByIndex(ii)
                     box_index = ii
                     # only delete the first one
@@ -575,7 +581,7 @@ class LTraj3DAvoid(LTrajAvoid):
 
     def plotTraj3D(self):
         fig = plt.figure()
-        ax = fig.gca(projection='3d')
+        ax = Axes3D(fig)
         self.plotBoxes(ax)
         ax.plot([x[self.ind_x].varValue for x in self.var_x],
                 [x[self.ind_y].varValue for x in self.var_x],
@@ -731,4 +737,4 @@ def random3DShortest(Nt=5,num_boxes=10,ctr_range=(2.0,8.0),size_range=(0.1,3.0),
     return lt
 
 if __name__=="__main__":
-    random3DShortest(num_boxes=5,method='BNB')
+    randomTest(num_boxes=8,method='MILP')
