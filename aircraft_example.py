@@ -43,5 +43,6 @@ p.objective+=cost_var
 p.add2NormStageCost(np.zeros((2,4)),0.001*np.eye(2),Nc=17)
 
 print(p)
+p.solveByMILP(M=1000)
 p.plotTraj2D()
 p.plotStateControlHistory()
