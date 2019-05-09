@@ -4,3 +4,4 @@
 gurobi.log
 .idea/*
 .spyproject/*
+/.ipynb_checkpoints/

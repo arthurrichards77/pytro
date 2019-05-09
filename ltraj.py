@@ -214,6 +214,40 @@ def mutliTest3(num_agents):
     lt = LTraj(A,B,5,num_agents=num_agents)
     return lt
 
+class UnionConstraint:
+    
+    def __init__(self,c,seq=100,name=None):
+        self.name = name
+        self.seq = seq
+        self.cons = c
+        
+    def __repr__(self):
+        or_sep = '\n  OR\n    '
+        and_sep = '\n    '
+        rep = ('\n' + self.name + ':\n{\n    ' +
+               or_sep.join([and_sep.join([repr(f) for f in e]) for e in self.cons]) +
+               '\n}')
+        return rep
+    
+    def convertToMILP(self,M,bin_name):
+        # constraint list
+        con_list = []
+        # number of regions
+        Nr = len(self.cons)
+        # expression for final binary constraint
+        bin_con = 0.0
+        for ii in range(Nr):
+            this_region_exp = self.cons[ii]
+            # new binary dec var
+            new_bin = pulp.LpVariable("%s_%i" % (bin_name,ii),cat='Binary')
+            # new constraint for each inequality defining the region
+            for cc in this_region_exp:
+                con_list.append(cc-M*new_bin<=0)
+            # add the binary to the logic constraint
+            bin_con += new_bin
+        # add the logical constraint
+        con_list.append(bin_con <= (Nr-1))
+        return con_list
 
 class LpProbUnionCons(LpProbVectors):
 
@@ -222,8 +256,6 @@ class LpProbUnionCons(LpProbVectors):
         LpProbVectors.__init__(self, name, sense)
         # and set list of union constraints to zero
         self.union_cons = []
-        self.union_cons_seqs = []
-        self.union_cons_names = []
         # identify incompatible combinations early
         self.taboo_list = []
         # store solver early if given
@@ -235,28 +267,26 @@ class LpProbUnionCons(LpProbVectors):
         # c should be a tuple of vector expressions
         # constraint x in union{c[0]<=0, c[1]<=0, ...}
         # elements do not have to be same size
-        self.union_cons.append(c)
-        self.union_cons_seqs.append(seq)
         if name is None:
             name = ("_union%i" % (1+len(self.union_cons)))
-        self.union_cons_names.append(name)        
-
+        self.union_cons.append(UnionConstraint(c,seq,name))
+        
     def delUnionConstraint(self,ii):
         del self.union_cons[ii]
-        del self.union_cons_seqs[ii]
-        del self.union_cons_names[ii]
-
+        
     def delUnionConByName(self,name):
         try:
             print("Deleting union constraint %s." % name)
-            ii = self.union_cons_names.index(name)
+            names = [c.names for c in self.union_cons]
+            ii = names.index(name)
             self.delUnionConstraint(ii)
         except ValueError:
             print("Can't find union constraint with name %s." % name)
 
     def __repr__(self):
         repr1 = LpProbVectors.__repr__(self)
-        repr2 = "\nUNIONS\n" + self.union_cons.__repr__()        
+        union_sep = '\n'
+        repr2 = "\nUNIONS\n" + union_sep.join([repr(c) for c in self.union_cons])        
         return(repr1+repr2)
 
     def _getNextNode(self,strategy='depth'):
@@ -358,6 +388,8 @@ class LpProbUnionCons(LpProbVectors):
             print("%i : %i : %f : %s" % (self.lp_count,len(self.node_list),self.incumbent_cost,msg))
 
     def solveByBranchBound(self,Nmaxnodes=1000,Nmaxiters=5000,strategy='least_infeas',verbosity=1,**kwargs):
+        print("Branch and bound solver needs updating for new UnionConstraint method")
+        assert(1<0) # stop before it gets any worse!
         start_time = time.clock()
         # no lower bound yet
         self.lower_bound = -np.inf
@@ -425,27 +457,16 @@ class LpProbUnionCons(LpProbVectors):
                 # stop the clock
         self.solve_time = time.clock() - start_time
 
-    def _convertUnionToMILP(self,uc,M):
-        # number of regions
-        Nr = len(uc)
-        # expression for final binary constraint
-        bin_con = 0.0
-        for ii in range(Nr):
-            this_region_exp = uc[ii]
-            # new binary dec var
-            new_bin = pulp.LpVariable(("_b%i" % (self.numVariables()+1)),cat='Binary')
-            # new constraint for each inequality defining the region
-            for cc in this_region_exp:
-                self.addConstraint(cc-M*new_bin<=0)
-            # add the binary to the logic constraint
-            bin_con += new_bin
-        # add the logical constraint
-        self.addConstraint(bin_con <= (Nr-1))
-
-    def _convertToMILP(self,M=100):
+    def convertToMILP(self,M=100):
+        # make a copy of current union constraint problem in MILP form
+        new_prob = LpProbVectors(name=self.name, sense=self.sense)
+        new_prob.objective = self.objective.copy()
+        new_prob.constraints = self.constraints.copy()
         for uc in self.union_cons:
-            self._convertUnionToMILP(uc,M)
-        self.has_been_MILPed = True
+            con_list = uc.convertToMILP(M,"b_%s_" % uc.name)
+            for con in con_list:
+                new_prob.addConstraint(con)
+        return(new_prob)
 
     def solveByMILP(self,M=100,**kwargs):
         if not self.has_been_MILPed:
