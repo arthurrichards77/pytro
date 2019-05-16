@@ -469,10 +469,9 @@ class LpProbUnionCons(LpProbVectors):
         return(new_prob)
 
     def solveByMILP(self,M=100,**kwargs):
-        if not self.has_been_MILPed:
-          self._convertToMILP(M)
+        self._asMILP = self.convertToMILP(M)
         start_time = time.clock()
-        self.solve(**kwargs)
+        self._asMILP.solve(**kwargs)
         self.solve_time = time.clock() - start_time
 
 
