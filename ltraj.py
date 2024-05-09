@@ -390,7 +390,7 @@ class LpProbUnionCons(LpProbVectors):
     def solveByBranchBound(self,Nmaxnodes=1000,Nmaxiters=5000,strategy='least_infeas',verbosity=1,**kwargs):
         print("Branch and bound solver needs updating for new UnionConstraint method")
         assert(1<0) # stop before it gets any worse!
-        start_time = time.clock()
+        #start_time = time.clock()
         # no lower bound yet
         self.lower_bound = -np.inf
         # initialize the node list with root ULP
@@ -454,8 +454,8 @@ class LpProbUnionCons(LpProbVectors):
             # copy result back to parent
             for ii in range(len(self.variables())):
                 self.variables()[ii].varValue = self.incumbent_sol[ii]
-                # stop the clock
-        self.solve_time = time.clock() - start_time
+        # stop the clock
+        self.solve_time = NotImplemented # time.clock() - start_time
 
     def convertToMILP(self,M=100):
         # make a copy of current union constraint problem in MILP form
@@ -470,9 +470,9 @@ class LpProbUnionCons(LpProbVectors):
 
     def solveByMILP(self,M=100,**kwargs):
         self._asMILP = self.convertToMILP(M)
-        start_time = time.clock()
+        #start_time = time.clock()
         self._asMILP.solve(**kwargs)
-        self.solve_time = time.clock() - start_time
+        self.solve_time = NotImplemented # time.clock() - start_time
 
 
 class LTrajAvoid(LTraj, LpProbUnionCons):
